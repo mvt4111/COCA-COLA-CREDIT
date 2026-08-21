@@ -1595,351 +1595,804 @@ with tab_bills:
             "#### 📋 Detailed Bills"
         )
 
-        # ----------------------------------------------------------------------
-        # BILL TABLE HEADER
-        # DUES DAYS SECOND LAST
-        # ----------------------------------------------------------------------
-        (
-            h_col1,
-            h_col2,
-            h_col3,
-            h_col4,
-            h_col5,
-            h_col6,
-            h_col7,
-            h_col8,
-            h_col9,
-            h_col10,
-            h_col11,
-        ) = st.columns(
-            [
-                1.0,
-                0.9,
-                1.2,
-                1.0,
-                1.0,
-                1.0,
-                1.0,
-                1.0,
-                1.0,
-                0.7,
-                0.7,
-            ]
+       # ============================================================
+# PROFESSIONAL BILL TABLE
+# ============================================================
+
+st.markdown("""
+<style>
+
+.bill-container {
+    background: #f4f7fb;
+    padding: 18px;
+    border: 1px solid #d6dee8;
+    border-radius: 14px;
+    box-shadow: 0 5px 18px rgba(0,0,0,0.07);
+    margin-top: 12px;
+}
+
+/* TABLE HEADER */
+.bill-header {
+    background: #17365d;
+    color: white;
+    font-weight: 700;
+    padding: 11px 6px;
+    border-right: 1px solid #52759c;
+    text-align: center;
+    min-height: 42px;
+}
+
+/* ROW */
+.bill-row {
+    background: white;
+    border-bottom: 1px solid #d8e0e8;
+    border-right: 1px solid #d8e0e8;
+    padding: 7px 4px;
+    min-height: 42px;
+}
+
+.bill-row-alt {
+    background: #f7f9fc;
+}
+
+/* TEXT */
+.bill-code {
+    color: #17365d;
+    font-weight: 800;
+}
+
+.amount {
+    font-weight: 600;
+    color: #263238;
+}
+
+.balance-due {
+    color: #c62828;
+    font-weight: 800;
+}
+
+.balance-paid {
+    color: #198754;
+    font-weight: 800;
+}
+
+/* STATUS */
+.status-paid {
+    background: #dff5e7;
+    color: #198754;
+    padding: 4px 9px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    border: 1px solid #b8e5c8;
+}
+
+.status-partial {
+    background: #fff0d6;
+    color: #c77700;
+    padding: 4px 9px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    border: 1px solid #ffd58a;
+}
+
+.status-unpaid {
+    background: #fde2e2;
+    color: #c62828;
+    padding: 4px 9px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    border: 1px solid #f5b5b5;
+}
+
+/* DUES */
+.dues-green {
+    color: #198754;
+    font-weight: 700;
+}
+
+.dues-orange {
+    color: #e67e00;
+    font-weight: 700;
+}
+
+.dues-red {
+    color: #c62828;
+    font-weight: 800;
+}
+
+/* EDIT CARD */
+.edit-card {
+    background: #fff8e7;
+    border: 1px solid #f1d58a;
+    border-left: 5px solid #d69e2e;
+    border-radius: 10px;
+    padding: 14px;
+    margin: 8px 0 15px 0;
+}
+
+/* BUTTONS */
+div.stButton > button {
+    border-radius: 7px;
+    font-weight: 700;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+
+# ============================================================
+# TITLE
+# ============================================================
+
+st.markdown(
+    """
+    <div style="
+        font-size:23px;
+        font-weight:800;
+        color:#17365d;
+        margin:10px 0 12px 0;
+    ">
+        📋 BILL / DUES REGISTER
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+# ============================================================
+# TABLE CONTAINER
+# ============================================================
+
+st.markdown(
+    '<div class="bill-container">',
+    unsafe_allow_html=True
+)
+
+
+# ============================================================
+# HEADER
+# ============================================================
+
+(
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6,
+    h7,
+    h8,
+    h9,
+    h10,
+    h11,
+) = st.columns(
+    [
+        1.0,
+        0.9,
+        1.3,
+        1.0,
+        1.05,
+        1.05,
+        1.05,
+        1.0,
+        0.9,
+        0.55,
+        0.55,
+    ],
+    gap="small",
+)
+
+
+headers = [
+    ("Bill Code", h1),
+    ("Date", h2),
+    ("Outlet", h3),
+    ("Manager", h4),
+    ("Bill Amt", h5),
+    ("Paid Amt", h6),
+    ("Balance", h7),
+    ("Status", h8),
+    ("⏰ Dues", h9),
+    ("Edit", h10),
+    ("Delete", h11),
+]
+
+
+for title, col in headers:
+
+    with col:
+
+        st.markdown(
+            f"""
+            <div class="bill-header">
+                {title}
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
-        h_col1.write("**Bill Code**")
-        h_col2.write("**Date**")
-        h_col3.write("**Outlet**")
-        h_col4.write("**Manager**")
-        h_col5.write("**Bill Amt**")
-        h_col6.write("**Paid Amt**")
-        h_col7.write("**Balance**")
-        h_col8.write("**Status**")
-        h_col9.write("**⏰ Dues Days**")
-        h_col10.write("**Edit**")
-        h_col11.write("**Delete**")
 
-        st.divider()
+# ============================================================
+# HEADER LINE
+# ============================================================
 
-        for idx, row in df_view.iterrows():
+st.markdown(
+    """
+    <div style="
+        height:2px;
+        background:#17365d;
+        margin-bottom:3px;
+    "></div>
+    """,
+    unsafe_allow_html=True,
+)
 
-            is_paid = row["Balance"] <= 0
 
-            days_p = (
-                calculate_days_pending(
-                    row["Date"]
-                )
-                if not is_paid
-                else 0
+# ============================================================
+# BILL ROWS
+# ============================================================
+
+for row_no, (idx, row) in enumerate(df_view.iterrows()):
+
+    bill_no = row["Bill_No"]
+
+    balance = float(row["Balance"] or 0)
+
+    is_paid = balance <= 0
+
+
+    # --------------------------------------------------------
+    # DUES DAYS
+    # --------------------------------------------------------
+
+    if is_paid:
+
+        days_p = 0
+
+    else:
+
+        days_p = calculate_days_pending(
+            row["Date"]
+        )
+
+
+    # --------------------------------------------------------
+    # STATUS
+    # --------------------------------------------------------
+
+    if balance <= 0:
+
+        status_html = """
+        <span class="status-paid">
+            🟢 PAID
+        </span>
+        """
+
+    elif row["Status"] == "🔴 PARTIAL":
+
+        status_html = """
+        <span class="status-partial">
+            🟠 PARTIAL
+        </span>
+        """
+
+    else:
+
+        status_html = """
+        <span class="status-unpaid">
+            🔴 UNPAID
+        </span>
+        """
+
+
+    # --------------------------------------------------------
+    # DUES COLOR
+    # --------------------------------------------------------
+
+    if days_p == 0:
+
+        dues_html = """
+        <span class="dues-green">
+            0 Days
+        </span>
+        """
+
+    elif days_p <= 7:
+
+        dues_html = f"""
+        <span class="dues-green">
+            ⏰ {days_p} Days
+        </span>
+        """
+
+    elif days_p <= 15:
+
+        dues_html = f"""
+        <span class="dues-orange">
+            ⏰ {days_p} Days
+        </span>
+        """
+
+    else:
+
+        dues_html = f"""
+        <span class="dues-red">
+            🔴 {days_p} Days
+        </span>
+        """
+
+
+    # --------------------------------------------------------
+    # ALTERNATE ROW COLOR
+    # --------------------------------------------------------
+
+    row_class = (
+        "bill-row-alt"
+        if row_no % 2
+        else "bill-row"
+    )
+
+
+    # --------------------------------------------------------
+    # ROW COLUMNS
+    # --------------------------------------------------------
+
+    (
+        c1,
+        c2,
+        c3,
+        c4,
+        c5,
+        c6,
+        c7,
+        c8,
+        c9,
+        c10,
+        c11,
+    ) = st.columns(
+        [
+            1.0,
+            0.9,
+            1.3,
+            1.0,
+            1.05,
+            1.05,
+            1.05,
+            1.0,
+            0.9,
+            0.55,
+            0.55,
+        ],
+        gap="small",
+    )
+
+
+    # --------------------------------------------------------
+    # BILL CODE
+    # --------------------------------------------------------
+
+    with c1:
+
+        st.markdown(
+            f"""
+            <div class="{row_class}">
+                <span class="bill-code">
+                    {bill_no}
+                </span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+    # --------------------------------------------------------
+    # DATE
+    # --------------------------------------------------------
+
+    with c2:
+
+        st.markdown(
+            f"""
+            <div class="{row_class}">
+                {row["Date"]}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+    # --------------------------------------------------------
+    # OUTLET
+    # --------------------------------------------------------
+
+    with c3:
+
+        st.markdown(
+            f"""
+            <div class="{row_class}">
+                {row["Outlet_Name"]}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+    # --------------------------------------------------------
+    # MANAGER
+    # --------------------------------------------------------
+
+    with c4:
+
+        st.markdown(
+            f"""
+            <div class="{row_class}">
+                {row["Manager_Name"]}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+    # --------------------------------------------------------
+    # BILL AMOUNT
+    # --------------------------------------------------------
+
+    with c5:
+
+        st.markdown(
+            f"""
+            <div class="{row_class} amount">
+                ₹ {float(row["Bill_Amount"]):,.2f}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+    # --------------------------------------------------------
+    # PAID AMOUNT
+    # --------------------------------------------------------
+
+    with c6:
+
+        st.markdown(
+            f"""
+            <div class="{row_class} amount">
+                ₹ {float(row["Paid_Amount"]):,.2f}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+    # --------------------------------------------------------
+    # BALANCE
+    # --------------------------------------------------------
+
+    balance_class = (
+        "balance-paid"
+        if balance <= 0
+        else "balance-due"
+    )
+
+    with c7:
+
+        st.markdown(
+            f"""
+            <div class="{row_class} {balance_class}">
+                ₹ {balance:,.2f}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+    # --------------------------------------------------------
+    # STATUS
+    # --------------------------------------------------------
+
+    with c8:
+
+        st.markdown(
+            f"""
+            <div class="{row_class}"
+                 style="text-align:center;">
+                {status_html}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+    # --------------------------------------------------------
+    # DUES
+    # --------------------------------------------------------
+
+    with c9:
+
+        st.markdown(
+            f"""
+            <div class="{row_class}"
+                 style="text-align:center;">
+                {dues_html}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+    # ========================================================
+    # EDIT BUTTON
+    # ========================================================
+
+    with c10:
+
+        if st.button(
+            "✏️",
+            key=f"edit_b_{bill_no}",
+            help="Modify this bill",
+        ):
+
+            st.session_state[
+                f"editing_bill_{bill_no}"
+            ] = True
+
+            st.rerun()
+
+
+    # ========================================================
+    # DELETE BUTTON
+    # ========================================================
+
+    with c11:
+
+        if st.button(
+            "🗑️",
+            key=f"del_b_{bill_no}",
+            help="Delete this bill",
+        ):
+
+            st.session_state[
+                f"confirm_delete_bill_{bill_no}"
+            ] = True
+
+            st.rerun()
+
+
+    # ========================================================
+    # EDIT FORM
+    # ========================================================
+
+    if st.session_state.get(
+        f"editing_bill_{bill_no}",
+        False,
+    ):
+
+        st.markdown(
+            f"""
+            <div class="edit-card">
+
+                <h4 style="
+                    color:#B7791F;
+                    margin:0;
+                ">
+                    ✏️ MODIFY BILL: {bill_no}
+                </h4>
+
+                <p style="
+                    margin:4px 0 0 0;
+                    color:#665;
+                ">
+                    Existing bill details ko yahan modify karein.
+                </p>
+
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+        edit_col1, edit_col2 = st.columns(2)
+
+
+        # ----------------------------------------------------
+        # EDIT LEFT
+        # ----------------------------------------------------
+
+        with edit_col1:
+
+            edit_date = st.date_input(
+                "Bill Date",
+
+                datetime.strptime(
+                    row["Date"],
+                    "%d-%m-%Y",
+                ),
+
+                format="DD/MM/YYYY",
+
+                key=f"edit_date_{bill_no}",
             )
 
-            with st.container():
 
-                (
-                    c1,
-                    c2,
-                    c3,
-                    c4,
-                    c5,
-                    c6,
-                    c7,
-                    c8,
-                    c9,
-                    c10,
-                    c11,
-                ) = st.columns(
-                    [
-                        1.0,
-                        0.9,
-                        1.2,
-                        1.0,
-                        1.0,
-                        1.0,
-                        1.0,
-                        1.0,
-                        1.0,
-                        0.7,
-                        0.7,
-                    ]
-                )
+            edit_manager = st.selectbox(
+                "Sales Manager",
 
-                c1.write(
-                    f"**{row['Bill_No']}**"
-                )
+                managers_list,
 
-                c2.write(
-                    row["Date"]
-                )
-
-                c3.write(
-                    row["Outlet_Name"]
-                )
-
-                c4.write(
-                    row["Manager_Name"]
-                )
-
-                c5.write(
-                    f"Rs {row['Bill_Amount']:,.2f}"
-                )
-
-                c6.write(
-                    f"Rs {row['Paid_Amount']:,.2f}"
-                )
-
-                c7.write(
-                    f"Rs {row['Balance']:,.2f}"
-                )
-
-                if row["Status"] == "🟢 PAID":
-
-                    c8.markdown(
-                        "**🟢 PAID**"
+                index=(
+                    managers_list.index(
+                        row["Manager_Name"]
                     )
 
-                elif row["Status"] == "🔴 PARTIAL":
+                    if row["Manager_Name"]
+                    in managers_list
 
-                    c8.markdown(
-                        "**🔴 PARTIAL**"
+                    else 0
+                ),
+
+                key=f"edit_mgr_{bill_no}",
+            )
+
+
+        # ----------------------------------------------------
+        # EDIT RIGHT
+        # ----------------------------------------------------
+
+        with edit_col2:
+
+            edit_outlet = st.text_input(
+                "Customer / Outlet Name",
+
+                value=row["Outlet_Name"],
+
+                key=f"edit_outlet_{bill_no}",
+            )
+
+
+            edit_amount = st.number_input(
+                "Bill Amount (Rs)",
+
+                min_value=float(
+                    row["Paid_Amount"]
+                ),
+
+                value=float(
+                    row["Bill_Amount"]
+                ),
+
+                step=50.0,
+
+                key=f"edit_amount_{bill_no}",
+            )
+
+
+        edit_note = st.text_input(
+            "Bill Details / Goods Note",
+
+            value=(
+                row["Note"]
+                if row["Note"]
+                else ""
+            ),
+
+            key=f"edit_note_{bill_no}",
+        )
+
+
+        save_col, cancel_col = st.columns(2)
+
+
+        # ----------------------------------------------------
+        # SAVE
+        # ----------------------------------------------------
+
+        with save_col:
+
+            if st.button(
+                "💾 Save Changes",
+                key=f"save_edit_{bill_no}",
+                use_container_width=True,
+            ):
+
+                new_outlet = (
+                    edit_outlet
+                    .strip()
+                    .title()
+                )
+
+
+                if not new_outlet:
+
+                    st.error(
+                        "Outlet name cannot be empty."
                     )
+
+
+                elif edit_amount < float(
+                    row["Paid_Amount"]
+                ):
+
+                    st.error(
+                        f"Bill amount cannot be "
+                        f"less than paid amount "
+                        f"₹ {float(row['Paid_Amount']):,.2f}."
+                    )
+
 
                 else:
 
-                    c8.markdown(
-                        "**🔴 UNPAID**"
-                    )
+                    success, message = (
+                        update_bill_in_db(
 
-                if not is_paid:
+                            bill_no,
 
-                    c9.markdown(
-                        f"**⏰ {days_p} Days**"
-                    )
-
-                else:
-
-                    c9.write(
-                        "0 Days"
-                    )
-
-                # ------------------------------------------------------------------
-                # EDIT
-                # ------------------------------------------------------------------
-                if c10.button(
-                    "✏️",
-                    key=f"edit_b_{row['Bill_No']}",
-                    help="Modify this bill",
-                ):
-
-                    st.session_state[
-                        f"editing_bill_{row['Bill_No']}"
-                    ] = True
-
-                    st.rerun()
-
-                # ------------------------------------------------------------------
-                # DELETE
-                # ------------------------------------------------------------------
-                if c11.button(
-                    "🗑️",
-                    key=f"del_b_{row['Bill_No']}",
-                    help="Delete this bill",
-                ):
-
-                    st.session_state[
-                        f"confirm_delete_bill_{row['Bill_No']}"
-                    ] = True
-
-                    st.rerun()
-
-                # ------------------------------------------------------------------
-                # EDIT FORM
-                # ------------------------------------------------------------------
-                if st.session_state.get(
-                    f"editing_bill_{row['Bill_No']}",
-                    False,
-                ):
-
-                    st.markdown(
-                        f"""
-                        <div class="edit-card">
-                            <h4 style="color:#B7791F; margin:0;">
-                                ✏️ MODIFY BILL:
-                                {row['Bill_No']}
-                            </h4>
-                            <p style="margin:0;">
-                                Existing bill details ko yahan modify karein.
-                            </p>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-
-                    edit_col1, edit_col2 = st.columns(2)
-
-                    with edit_col1:
-
-                        edit_date = st.date_input(
-                            "Bill Date",
-                            datetime.strptime(
-                                row["Date"],
-                                "%d-%m-%Y",
+                            edit_date.strftime(
+                                "%d-%m-%Y"
                             ),
-                            format="DD/MM/YYYY",
-                            key=f"edit_date_{row['Bill_No']}",
+
+                            edit_manager,
+
+                            new_outlet,
+
+                            float(edit_amount),
+
+                            edit_note,
+                        )
+                    )
+
+
+                    if success:
+
+                        st.success(
+                            f"✅ Bill {bill_no} "
+                            f"modified successfully!"
                         )
 
-                        edit_manager = st.selectbox(
-                            "Sales Manager",
-                            managers_list,
-                            index=(
-                                managers_list.index(
-                                    row["Manager_Name"]
-                                )
-                                if row["Manager_Name"]
-                                in managers_list
-                                else 0
-                            ),
-                            key=f"edit_mgr_{row['Bill_No']}",
-                        )
 
-                    with edit_col2:
+                        st.session_state[
+                            f"editing_bill_{bill_no}"
+                        ] = False
 
-                        edit_outlet = st.text_input(
-                            "Customer / Outlet Name",
-                            value=row[
-                                "Outlet_Name"
-                            ],
-                            key=f"edit_outlet_{row['Bill_No']}",
-                        )
 
-                        edit_amount = st.number_input(
-                            "Bill Amount (Rs)",
-                            min_value=float(
-                                row["Paid_Amount"]
-                            ),
-                            value=float(
-                                row["Bill_Amount"]
-                            ),
-                            step=50.0,
-                            key=f"edit_amount_{row['Bill_No']}",
-                        )
+                        st.rerun()
 
-                    edit_note = st.text_input(
-                        "Bill Details / Goods Note",
-                        value=(
-                            row["Note"]
-                            if row["Note"]
-                            else ""
-                        ),
-                        key=f"edit_note_{row['Bill_No']}",
-                    )
 
-                    save_col, cancel_col = st.columns(2)
+                    else:
 
-                    with save_col:
+                        st.error(message)
 
-                        if st.button(
-                            "💾 Save Changes",
-                            key=f"save_edit_{row['Bill_No']}",
-                            use_container_width=True,
-                        ):
 
-                            new_outlet = (
-                                edit_outlet
-                                .strip()
-                                .title()
-                            )
+        # ----------------------------------------------------
+        # CANCEL
+        # ----------------------------------------------------
 
-                            if not new_outlet:
+        with cancel_col:
 
-                                st.error(
-                                    "Outlet name cannot be empty."
-                                )
+            if st.button(
+                "❌ Cancel",
+                key=f"cancel_edit_{bill_no}",
+                use_container_width=True,
+            ):
 
-                            elif (
-                                edit_amount
-                                < float(
-                                    row["Paid_Amount"]
-                                )
-                            ):
+                st.session_state[
+                    f"editing_bill_{bill_no}"
+                ] = False
 
-                                st.error(
-                                    f"Bill amount cannot be "
-                                    f"less than paid amount "
-                                    f"Rs "
-                                    f"{row['Paid_Amount']:,.2f}."
-                                )
+                st.rerun()
 
-                            else:
 
-                                success, message = (
-                                    update_bill_in_db(
-                                        row["Bill_No"],
-                                        edit_date.strftime(
-                                            "%d-%m-%Y"
-                                        ),
-                                        edit_manager,
-                                        new_outlet,
-                                        float(
-                                            edit_amount
-                                        ),
-                                        edit_note,
-                                    )
-                                )
+# ============================================================
+# TABLE CONTAINER END
+# ============================================================
 
-                                if success:
-
-                                    st.success(
-                                        f"✅ Bill "
-                                        f"{row['Bill_No']} "
-                                        f"modified successfully!"
-                                    )
-
-                                    st.session_state[
-                                        f"editing_bill_{row['Bill_No']}"
-                                    ] = False
-
-                                    st.rerun()
-
-                                else:
-
-                                    st.error(
-                                        message
-                                    )
-
-                    with cancel_col:
-
-                        if st.button(
-                            "❌ Cancel",
-                            key=f"cancel_edit_{row['Bill_No']}",
-                            use_container_width=True,
-                        ):
-
-                            st.session_state[
-                                f"editing_bill_{row['Bill_No']}"
-                            ] = False
-
-                            st.rerun()
+st.markdown(
+    "</div>",
+    unsafe_allow_html=True
+)
 
                 # ------------------------------------------------------------------
                 # DELETE CONFIRMATION
