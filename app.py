@@ -50,21 +50,17 @@ st.markdown(
 )
 
 st.title("🥤 MS MAA VINDHYAWASINI TRADERS (COCA COLA)")
-st.caption(
-    "Bill-Wise Accounting System with Customer Short Bill Codes & Dues Days"
-    " Tracking"
-)
+st.caption("Bill-Wise Ledger System with Auto Bill Codes & Payment Clearance")
 
 # ------------------------------------------------------------------------------
-# 1. DATABASE MANAGEMENT (BILL-WISE LOGIC WITH DUES DAYS)
+# 1. DATABASE MANAGEMENT
 # ------------------------------------------------------------------------------
-DB_FILE = "khatabook_billwise_v2.db"
+DB_FILE = "khatabook_billwise_v4.db"
 
 
 def init_db():
   conn = sqlite3.connect(DB_FILE)
   c = conn.cursor()
-  # Table 1: Bills Master
   c.execute("""
         CREATE TABLE IF NOT EXISTS bills (
             Bill_ID INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,7 +75,6 @@ def init_db():
             Note TEXT
         )
     """)
-  # Table 2: Payments History
   c.execute("""
         CREATE TABLE IF NOT EXISTS payments (
             Payment_ID INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -88,11 +83,9 @@ def init_db():
             Outlet_Name TEXT,
             Manager_Name TEXT,
             Amount_Paid REAL,
-            Payment_Mode TEXT,
-            FOREIGN KEY (Bill_No) REFERENCES bills(Bill_No)
+            Payment_Mode TEXT
         )
     """)
-  # Table 3: Managers Master
   c.execute("""
         CREATE TABLE IF NOT EXISTS managers (
             name TEXT PRIMARY KEY
@@ -105,32 +98,38 @@ def init_db():
   conn.close()
 
 
-def refresh_state_from_db():
+def get_all_bills():
   conn = sqlite3.connect(DB_FILE)
-  bills_df = pd.read_sql_query(
-      "SELECT * FROM bills ORDER BY Bill_ID DESC", conn
-  )
-  mgr_df = pd.read_sql_query("SELECT name FROM managers", conn)
+  df = pd.read_sql_query("SELECT * FROM bills ORDER BY Bill_ID DESC", conn)
   conn.close()
+  return df
 
-  managers_list = (
-      mgr_df["name"].tolist() if not mgr_df.empty else ["Default Manager"]
+
+def get_all_payments():
+  conn = sqlite3.connect(DB_FILE)
+  df = pd.read_sql_query(
+      "SELECT * FROM payments ORDER BY Payment_ID DESC", conn
   )
-  outlets_list = (
-      sorted(list(bills_df["Outlet_Name"].dropna().unique()))
-      if not bills_df.empty
-      else []
+  conn.close()
+  return df
+
+
+def get_managers():
+  conn = sqlite3.connect(DB_FILE)
+  df = pd.read_sql_query("SELECT name FROM managers", conn)
+  conn.close()
+  return (
+      df["name"].tolist() if not df.empty else ["Default Manager"]
   )
 
-  outlet_mgr_map = {}
-  if not bills_df.empty:
-    for _, row in bills_df.iterrows():
-      outlet_mgr_map[row["Outlet_Name"]] = row["Manager_Name"]
 
-  st.session_state.bills = bills_df
-  st.session_state.managers_list = managers_list
-  st.session_state.outlets_list = outlets_list
-  st.session_state.outlet_manager_map = outlet_mgr_map
+def get_outlets():
+  conn = sqlite3.connect(DB_FILE)
+  c = conn.cursor()
+  c.execute("SELECT DISTINCT Outlet_Name FROM bills ORDER BY Outlet_Name ASC")
+  outlets = [row[0] for row in c.fetchall() if row[0]]
+  conn.close()
+  return outlets
 
 
 def generate_auto_bill_code(outlet_name):
@@ -166,7 +165,6 @@ def save_bill_to_db(bill_no, date_str, mgr, outlet, amount, note):
   )
   conn.commit()
   conn.close()
-  refresh_state_from_db()
 
 
 def record_bill_payment(
@@ -216,7 +214,6 @@ def record_bill_payment(
 
     conn.commit()
   conn.close()
-  refresh_state_from_db()
 
 
 def delete_bill_from_db(bill_no):
@@ -226,7 +223,33 @@ def delete_bill_from_db(bill_no):
   c.execute("DELETE FROM payments WHERE Bill_No = ?", (bill_no,))
   conn.commit()
   conn.close()
-  refresh_state_from_db()
+
+
+def delete_payment_from_db(pay_id, bill_no, amt):
+  conn = sqlite3.connect(DB_FILE)
+  c = conn.cursor()
+  c.execute("DELETE FROM payments WHERE Payment_ID = ?", (pay_id,))
+  c.execute(
+      "SELECT Bill_Amount, Paid_Amount FROM bills WHERE Bill_No = ?", (bill_no,)
+  )
+  row = c.fetchone()
+  if row:
+    b_amt, p_amt = row
+    n_paid = max(0.0, p_amt - amt)
+    n_bal = b_amt - n_paid
+    n_status = (
+        "🟢 PAID" if n_bal <= 0 else ("🔴 UNPAID" if n_paid == 0 else "🔴 PARTIAL")
+    )
+    c.execute(
+        """
+            UPDATE bills 
+            SET Paid_Amount = ?, Balance = ?, Status = ? 
+            WHERE Bill_No = ?
+        """,
+        (n_paid, n_bal, n_status, bill_no),
+    )
+  conn.commit()
+  conn.close()
 
 
 def save_manager_to_db(mgr_str):
@@ -239,16 +262,11 @@ def save_manager_to_db(mgr_str):
     )
     conn.commit()
     conn.close()
-    refresh_state_from_db()
 
 
-# Initialize DB
 init_db()
-if "bills" not in st.session_state:
-  refresh_state_from_db()
 
 
-# Helper to calculate days pending
 def calculate_days_pending(bill_date_str):
   try:
     b_date = datetime.strptime(bill_date_str, "%d-%m-%Y")
@@ -259,11 +277,9 @@ def calculate_days_pending(bill_date_str):
 
 
 # ------------------------------------------------------------------------------
-# 2. PDF GENERATION FUNCTION
+# 2. PDF REPORT GENERATOR
 # ------------------------------------------------------------------------------
-def generate_pdf_report(
-    df_data, report_title="CUSTOMER BILL STATEMENT", subtitle_info=""
-):
+def generate_pdf_report(df_data, subtitle_info=""):
   buffer = io.BytesIO()
   doc = SimpleDocTemplate(
       buffer,
@@ -380,7 +396,9 @@ def generate_pdf_report(
         Paragraph(str(row["Bill_No"]), table_cell_style),
         Paragraph(str(row["Date"]), table_cell_style),
         Paragraph(str(row["Outlet_Name"]), table_cell_style),
-        Paragraph(days_str, red_cell_style if row["Balance"] > 0 else table_cell_style),
+        Paragraph(
+            days_str, red_cell_style if row["Balance"] > 0 else table_cell_style
+        ),
         Paragraph(f"Rs {row['Bill_Amount']:,.2f}", table_cell_style),
         Paragraph(f"Rs {row['Paid_Amount']:,.2f}", green_cell_style),
         Paragraph(f"Rs {row['Balance']:,.2f}", red_cell_style),
@@ -410,6 +428,12 @@ def generate_pdf_report(
   return buffer.getvalue()
 
 
+# Fetch Data Fresh Every Rerun
+managers_list = get_managers()
+outlets_list = get_outlets()
+bills_df = get_all_bills()
+payments_df = get_all_payments()
+
 # ------------------------------------------------------------------------------
 # 3. SIDEBAR SETUP
 # ------------------------------------------------------------------------------
@@ -426,11 +450,11 @@ with st.sidebar:
 
     st.divider()
     st.write("**Current Managers:**")
-    st.write(", ".join(st.session_state.managers_list))
+    st.write(", ".join(managers_list))
 
   with st.expander("💾 Backup CSV"):
-    if not st.session_state.bills.empty:
-      csv_buf = st.session_state.bills.to_csv(index=False).encode("utf-8")
+    if not bills_df.empty:
+      csv_buf = bills_df.to_csv(index=False).encode("utf-8")
       st.download_button(
           label="📥 Download Bills CSV Backup",
           data=csv_buf,
@@ -442,12 +466,12 @@ with st.sidebar:
       )
 
 # ------------------------------------------------------------------------------
-# 4. TRANSACTIONS ENTRY SECTION (CUSTOMER CODE + DUES DAYS)
+# 4. TRANSACTIONS ENTRY SECTION
 # ------------------------------------------------------------------------------
 st.markdown("---")
 col_left, col_right = st.columns(2)
 
-# DUES ENTRY (NEW BILL GENERATION)
+# DUES ENTRY (NEW BILL)
 with col_left:
   st.markdown(
       """
@@ -462,16 +486,11 @@ with col_left:
   b_date = st.date_input(
       "Bill Date", datetime.now(), format="DD/MM/YYYY", key="b_date_key"
   )
-
   b_manager = st.selectbox(
-      "Select Sales Manager",
-      st.session_state.managers_list,
-      key="b_mgr_select",
+      "Select Sales Manager", managers_list, key="b_mgr_select"
   )
 
-  existing_outlets = [
-      "+ Add New Customer/Outlet"
-  ] + st.session_state.outlets_list
+  existing_outlets = ["+ Add New Customer/Outlet"] + outlets_list
   selected_b_outlet = st.selectbox(
       "Customer / Outlet Name", existing_outlets, key="b_outlet_select"
   )
@@ -481,10 +500,11 @@ with col_left:
   else:
     b_outlet = selected_b_outlet
 
-  # AUTO-GENERATED BILL CODE (RAM-1, RAM-2 etc.)
   suggested_code = generate_auto_bill_code(b_outlet)
   b_no = st.text_input(
-      "Auto Bill Code (कस्टमर कोड + नंबर)", value=suggested_code
+      "Auto Bill Code (कस्टमर कोड + नंबर)",
+      value=suggested_code,
+      key="b_no_input",
   )
 
   b_amount = st.number_input(
@@ -497,7 +517,10 @@ with col_left:
       st.error("Please enter a valid Outlet Name!")
     elif b_amount <= 0:
       st.error("Please enter a valid amount greater than zero!")
-    elif b_no.strip() in st.session_state.bills["Bill_No"].values:
+    elif (
+        not bills_df.empty
+        and b_no.strip() in bills_df["Bill_No"].astype(str).values
+    ):
       st.error(f"Bill Code '{b_no}' already exists! Use a unique Bill Code.")
     else:
       final_outlet = b_outlet.strip().title()
@@ -516,7 +539,7 @@ with col_left:
       )
       st.rerun()
 
-# RECEIVED ENTRY (BILL-WISE PAYMENT)
+# RECEIVED ENTRY (BILL-WISE PAYMENT CLEARANCE)
 with col_right:
   st.markdown(
       """
@@ -528,16 +551,16 @@ with col_right:
       unsafe_allow_html=True,
   )
 
-  if not st.session_state.outlets_list:
+  if not outlets_list:
     st.info("No active outlets found. Create a bill on the left first.")
   else:
     p_outlet = st.selectbox(
-        "Select Customer / Outlet",
-        st.session_state.outlets_list,
+        "Select Customer / Outlet for Payment:",
+        outlets_list,
         key="p_outlet_select",
     )
 
-    # Filter Unpaid / Partial Bills for this Outlet
+    # Fetch Unpaid Bills Fresh
     conn = sqlite3.connect(DB_FILE)
     unpaid_bills_df = pd.read_sql_query(
         "SELECT * FROM bills WHERE Outlet_Name = ? AND Balance > 0 ORDER BY"
@@ -550,15 +573,15 @@ with col_right:
     if unpaid_bills_df.empty:
       st.success(f"🎉 No outstanding unpaid bills for {p_outlet}!")
     else:
-      # Prepare Bill Selection List with DUES DAYS
       bill_options = {}
       for _, row in unpaid_bills_df.iterrows():
         d_days = calculate_days_pending(row["Date"])
-        label = f"Bill: {row['Bill_No']} ({row['Date']} | ⏰ {d_days} Days Old) -> Pending: Rs {row['Balance']:,.2f}"
+        label = f"{row['Bill_No']} | Date: {row['Date']} | ⏰ {d_days} Days Old | Balance Due: Rs {row['Balance']:,.2f}"
         bill_options[label] = row
 
       selected_bill_label = st.selectbox(
-          "Select Pending Bill to Pay:", list(bill_options.keys())
+          "Select Pending Bill Code to Clear Payment:",
+          list(bill_options.keys()),
       )
       selected_bill = bill_options[selected_bill_label]
 
@@ -569,7 +592,6 @@ with col_right:
           key="p_date_key",
       )
 
-      # Payment Type Option
       pay_type = st.radio(
           "Payment Type (भुगतान का प्रकार):",
           ["Full Bill Payment (पूरा बिल चुकता)", "Part Payment (आंशिक/किश्त)"],
@@ -577,10 +599,10 @@ with col_right:
       )
 
       if pay_type == "Full Bill Payment (पूरा बिल चुकता)":
-        p_amount = selected_bill["Balance"]
-        st.success(
-            f"✅ Full Bill Amount Selected: **Rs {p_amount:,.2f}** (Bill"
-            " will become 🟢 PAID)"
+        p_amount = float(selected_bill["Balance"])
+        st.info(
+            f"✅ Full Amount Selected: **Rs {p_amount:,.2f}** for Bill"
+            f" **{selected_bill['Bill_No']}**"
         )
       else:
         p_amount = st.number_input(
@@ -597,7 +619,7 @@ with col_right:
           key="p_mode",
       )
 
-      if st.button("🟢 Receive Payment for Selected Bill", use_container_width=True):
+      if st.button("🟢 Receive & Clear Payment", use_container_width=True):
         if p_amount <= 0:
           st.error("Please enter a valid amount greater than zero!")
         else:
@@ -605,139 +627,139 @@ with col_right:
           is_full_flag = pay_type == "Full Bill Payment (पूरा बिल चुकता)"
 
           record_bill_payment(
-              selected_bill["Bill_No"],
+              str(selected_bill["Bill_No"]),
               formatted_date,
               p_outlet,
-              selected_bill["Manager_Name"],
+              str(selected_bill["Manager_Name"]),
               float(p_amount),
               p_mode,
               is_full_flag,
           )
 
           st.success(
-              f"🟢 Received Payment of Rs {p_amount:,.2f} against Bill"
+              f"🟢 Payment of Rs {p_amount:,.2f} recorded for Bill"
               f" {selected_bill['Bill_No']}"
           )
           st.rerun()
 
 # ------------------------------------------------------------------------------
-# 5. DASHBOARD & DISPLAY SECTION
+# 5. DASHBOARD & TABS
 # ------------------------------------------------------------------------------
 st.markdown("---")
-st.subheader("📊 Bills Ledger & Dues Days Summary")
+st.subheader("📊 Business Dashboard & Records")
 
-if st.session_state.bills.empty:
-  st.info("No bills recorded yet.")
-else:
-  f_col1, f_col2 = st.columns(2)
+tab_bills, tab_payments = st.tabs(
+    ["📋 All Bills Ledger (बकाया बिल लिस्ट)", "🧾 Payments Received History (प्राप्त पेमेंट रसीदें)"]
+)
 
-  with f_col1:
-    selected_mgr_filter = st.selectbox(
-        "Filter by Sales Manager:",
-        options=["All Managers"] + st.session_state.managers_list,
-    )
-
-  if selected_mgr_filter == "All Managers":
-    filtered_outlets = ["All Outlets"] + st.session_state.outlets_list
+# TAB 1: ALL BILLS
+with tab_bills:
+  if bills_df.empty:
+    st.info("No bills recorded yet.")
   else:
-    mgr_outlets = list(
-        st.session_state.bills[
-            st.session_state.bills["Manager_Name"] == selected_mgr_filter
-        ]["Outlet_Name"].unique()
-    )
-    filtered_outlets = ["All Outlets"] + sorted(mgr_outlets)
+    f_col1, f_col2 = st.columns(2)
 
-  with f_col2:
-    selected_outlet_filter = st.selectbox(
-        "Filter by Outlet / Customer:", options=filtered_outlets
-    )
-
-  df_view = st.session_state.bills.copy()
-  if selected_mgr_filter != "All Managers":
-    df_view = df_view[df_view["Manager_Name"] == selected_mgr_filter]
-
-  if selected_outlet_filter != "All Outlets":
-    df_view = df_view[df_view["Outlet_Name"] == selected_outlet_filter]
-
-  tot_bill = df_view["Bill_Amount"].sum()
-  tot_paid = df_view["Paid_Amount"].sum()
-  tot_due = df_view["Balance"].sum()
-
-  m1, m2, m3 = st.columns(3)
-  m1.metric("Total Billed Amount", f"Rs {tot_bill:,.2f}")
-  m2.metric("Total Paid Received", f"Rs {tot_paid:,.2f}")
-  m3.metric("🔴 Total Net Dues Balance", f"Rs {tot_due:,.2f}")
-
-  # Detailed Bills Table Display with Dues Days
-  st.markdown("#### 📋 Detailed Bill Records with Dues Days")
-
-  # Table Header
-  h_col1, h_col2, h_col3, h_col4, h_col5, h_col6, h_col7, h_col8, h_col9, h_col10 = (
-      st.columns([1.1, 1.0, 1.3, 1.1, 1.1, 1.1, 1.1, 1.1, 1.0, 0.7])
-  )
-  h_col1.write("**Bill Code**")
-  h_col2.write("**Date**")
-  h_col3.write("**Outlet**")
-  h_col4.write("**Manager**")
-  h_col5.write("**⏰ Dues Days**")
-  h_col6.write("**Bill Amt**")
-  h_col7.write("**Paid Amt**")
-  h_col8.write("**Balance**")
-  h_col9.write("**Status**")
-  h_col10.write("**Action**")
-
-  st.divider()
-
-  for idx, row in df_view.iterrows():
-    is_paid = row["Balance"] <= 0
-    days_p = calculate_days_pending(row["Date"]) if not is_paid else 0
-
-    with st.container():
-      c1, c2, c3, c4, c5, c6, c7, c8, c9, c10 = st.columns(
-          [1.1, 1.0, 1.3, 1.1, 1.1, 1.1, 1.1, 1.1, 1.0, 0.7]
+    with f_col1:
+      selected_mgr_filter = st.selectbox(
+          "Filter by Manager:",
+          options=["All Managers"] + managers_list,
+          key="filter_mgr_tab1",
       )
 
-      c1.write(f"**{row['Bill_No']}**")
-      c2.write(row["Date"])
-      c3.write(row["Outlet_Name"])
-      c4.write(row["Manager_Name"])
+    if selected_mgr_filter == "All Managers":
+      filtered_outlets = ["All Outlets"] + outlets_list
+    else:
+      mgr_outlets = list(
+          bills_df[bills_df["Manager_Name"] == selected_mgr_filter][
+              "Outlet_Name"
+          ].unique()
+      )
+      filtered_outlets = ["All Outlets"] + sorted(mgr_outlets)
 
-      if not is_paid:
-        c5.markdown(f"**⏰ {days_p} Days**")
-      else:
-        c5.write("0 Days")
+    with f_col2:
+      selected_outlet_filter = st.selectbox(
+          "Filter by Outlet / Customer:",
+          options=filtered_outlets,
+          key="filter_outlet_tab1",
+      )
 
-      c6.write(f"Rs {row['Bill_Amount']:,.2f}")
-      c7.write(f"Rs {row['Paid_Amount']:,.2f}")
-      c8.write(f"Rs {row['Balance']:,.2f}")
+    df_view = bills_df.copy()
+    if selected_mgr_filter != "All Managers":
+      df_view = df_view[df_view["Manager_Name"] == selected_mgr_filter]
 
-      if row["Status"] == "🟢 PAID":
-        c9.markdown("**🟢 PAID**")
-      elif row["Status"] == "🔴 PARTIAL":
-        c9.markdown("**🔴 PARTIAL**")
-      else:
-        c9.markdown("**🔴 UNPAID**")
+    if selected_outlet_filter != "All Outlets":
+      df_view = df_view[df_view["Outlet_Name"] == selected_outlet_filter]
 
-      if c10.button("🗑️", key=f"del_{row['Bill_No']}"):
-        delete_bill_from_db(row["Bill_No"])
-        st.success(f"Bill #{row['Bill_No']} deleted!")
-        st.rerun()
+    tot_bill = df_view["Bill_Amount"].sum()
+    tot_paid = df_view["Paid_Amount"].sum()
+    tot_due = df_view["Balance"].sum()
 
-  # Export Section
-  st.markdown("---")
-  st.markdown("### 📄 Professional Export Options")
-  exp_col1, exp_col2 = st.columns(2)
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Total Billed Amount", f"Rs {tot_bill:,.2f}")
+    m2.metric("Total Paid Received", f"Rs {tot_paid:,.2f}")
+    m3.metric("🔴 Total Net Dues Balance", f"Rs {tot_due:,.2f}")
 
-  with exp_col1:
-    st.write("#### 📑 Customer PDF Statement")
+    st.markdown("#### 📋 Detailed Bills")
+
+    h_col1, h_col2, h_col3, h_col4, h_col5, h_col6, h_col7, h_col8, h_col9, h_col10 = (
+        st.columns([1.1, 1.0, 1.3, 1.1, 1.1, 1.1, 1.1, 1.1, 1.0, 0.7])
+    )
+    h_col1.write("**Bill Code**")
+    h_col2.write("**Date**")
+    h_col3.write("**Outlet**")
+    h_col4.write("**Manager**")
+    h_col5.write("**⏰ Dues Days**")
+    h_col6.write("**Bill Amt**")
+    h_col7.write("**Paid Amt**")
+    h_col8.write("**Balance**")
+    h_col9.write("**Status**")
+    h_col10.write("**Action**")
+
+    st.divider()
+
+    for idx, row in df_view.iterrows():
+      is_paid = row["Balance"] <= 0
+      days_p = calculate_days_pending(row["Date"]) if not is_paid else 0
+
+      with st.container():
+        c1, c2, c3, c4, c5, c6, c7, c8, c9, c10 = st.columns(
+            [1.1, 1.0, 1.3, 1.1, 1.1, 1.1, 1.1, 1.1, 1.0, 0.7]
+        )
+
+        c1.write(f"**{row['Bill_No']}**")
+        c2.write(row["Date"])
+        c3.write(row["Outlet_Name"])
+        c4.write(row["Manager_Name"])
+
+        if not is_paid:
+          c5.markdown(f"**⏰ {days_p} Days**")
+        else:
+          c5.write("0 Days")
+
+        c6.write(f"Rs {row['Bill_Amount']:,.2f}")
+        c7.write(f"Rs {row['Paid_Amount']:,.2f}")
+        c8.write(f"Rs {row['Balance']:,.2f}")
+
+        if row["Status"] == "🟢 PAID":
+          c9.markdown("**🟢 PAID**")
+        elif row["Status"] == "🔴 PARTIAL":
+          c9.markdown("**🔴 PARTIAL**")
+        else:
+          c9.markdown("**🔴 UNPAID**")
+
+        if c10.button("🗑️", key=f"del_b_{row['Bill_No']}"):
+          delete_bill_from_db(row["Bill_No"])
+          st.success(f"Bill #{row['Bill_No']} deleted!")
+          st.rerun()
+
+    st.markdown("---")
     rep_sub = (
         f"Outlet: {selected_outlet_filter} | Manager: {selected_mgr_filter}"
     )
-
     pdf_bytes = generate_pdf_report(df_view, subtitle_info=rep_sub)
 
     st.download_button(
-        label="📄 Download Professional PDF Statement",
+        label="📄 Download Bills PDF Statement",
         data=pdf_bytes,
         file_name=(
             f"Bill_Statement_{selected_outlet_filter}_"
@@ -746,38 +768,82 @@ else:
         mime="application/pdf",
     )
 
-  with exp_col2:
-    st.write("#### 💬 Direct WhatsApp Statement")
-    wa_phone = st.text_input(
-        "Customer WhatsApp Number", placeholder="91XXXXXXXXXX"
+# TAB 2: PAYMENTS HISTORY
+with tab_payments:
+  st.markdown("### 🟢 History of All Received Payments")
+
+  if payments_df.empty:
+    st.info("No payments received yet.")
+  else:
+    total_rec = payments_df["Amount_Paid"].sum()
+    st.metric("Total Payments Collected", f"Rs {total_rec:,.2f}")
+
+    p_col1, p_col2, p_col3, p_col4, p_col5, p_col6, p_col7 = st.columns(
+        [1.0, 1.2, 1.5, 1.2, 1.2, 1.2, 1.0]
     )
+    p_col1.write("**Date**")
+    p_col2.write("**Bill Code**")
+    p_col3.write("**Outlet / Store**")
+    p_col4.write("**Manager**")
+    p_col5.write("**Amount Received**")
+    p_col6.write("**Mode**")
+    p_col7.write("**Action**")
 
-    if st.button("📲 Generate WhatsApp Summary Link"):
-      if wa_phone.strip():
-        wa_text = "*🥤 MS MAA VINDHYAWASINI TRADERS*\n"
-        wa_text += f"*Customer Statement:* {selected_outlet_filter}\n"
-        wa_text += f"*Date:* {datetime.now().strftime('%d-%m-%Y')}\n"
-        wa_text += "-----------------------------------\n"
-        wa_text += f"🔴 *Total Billed:* Rs {tot_bill:,.2f}\n"
-        wa_text += f"🟢 *Total Paid:* Rs {tot_paid:,.2f}\n"
-        wa_text += f"📌 *NET BALANCE DUE:* Rs {tot_due:,.2f}\n"
-        wa_text += (
-            f"STATUS: {'🟢 FULLY PAID' if tot_due <= 0 else '🔴 PENDING DUES'}\n"
-        )
-        wa_text += "-----------------------------------\n"
-        wa_text += (
-            "Please clear the outstanding bill amounts at the earliest. Thank"
-            " you!"
+    st.divider()
+
+    for p_idx, p_row in payments_df.iterrows():
+      with st.container():
+        pc1, pc2, pc3, pc4, pc5, pc6, pc7 = st.columns(
+            [1.0, 1.2, 1.5, 1.2, 1.2, 1.2, 1.0]
         )
 
-        encoded_text = urllib.parse.quote(wa_text)
-        wa_url = (
-            "https://api.whatsapp.com/send?phone="
-            f"{wa_phone.strip()}&text={encoded_text}"
-        )
+        pc1.write(p_row["Date"])
+        pc2.write(f"**{p_row['Bill_No']}**")
+        pc3.write(p_row["Outlet_Name"])
+        pc4.write(p_row["Manager_Name"])
+        pc5.markdown(f"**🟢 Rs {p_row['Amount_Paid']:,.2f}**")
+        pc6.write(p_row["Payment_Mode"])
 
-        st.markdown(
-            f"[👉 Click Here to Send Statement via WhatsApp]({wa_url})"
-        )
-      else:
-        st.warning("Please enter a valid WhatsApp phone number!")
+        if pc7.button("🗑️", key=f"del_p_{p_row['Payment_ID']}"):
+          delete_payment_from_db(
+              p_row["Payment_ID"], p_row["Bill_No"], p_row["Amount_Paid"]
+          )
+          st.success("Payment entry removed!")
+          st.rerun()
+
+    st.markdown("---")
+    st.markdown("#### 📲 Send Payment Receipt to Customer via WhatsApp")
+
+    wa_p_col1, wa_p_col2 = st.columns(2)
+    with wa_p_col1:
+      rec_wa_phone = st.text_input(
+          "Customer Mobile No",
+          placeholder="91XXXXXXXXXX",
+          key="rec_wa_phone_key",
+      )
+    with wa_p_col2:
+      latest_pay = payments_df.iloc[0]
+      if st.button("💬 Send Latest Payment Confirmation Receipt"):
+        if rec_wa_phone.strip():
+          msg = "*🥤 MS MAA VINDHYAWASINI TRADERS*\n"
+          msg += "*PAYMENT RECEIPT (भुगतान रसीद)*\n"
+          msg += "-----------------------------------\n"
+          msg += f"👤 *Store Name:* {latest_pay['Outlet_Name']}\n"
+          msg += f"🧾 *Bill Code:* {latest_pay['Bill_No']}\n"
+          msg += f"📅 *Payment Date:* {latest_pay['Date']}\n"
+          msg += f"🟢 *AMOUNT RECEIVED:* Rs {latest_pay['Amount_Paid']:,.2f}\n"
+          msg += f"💳 *Payment Mode:* {latest_pay['Payment_Mode']}\n"
+          msg += "-----------------------------------\n"
+          msg += "Thank you for your payment! (धन्यवाद!)\n"
+
+          encoded_msg = urllib.parse.quote(msg)
+          wa_link = (
+              "https://api.whatsapp.com/send?phone="
+              f"{rec_wa_phone.strip()}&text={encoded_msg}"
+          )
+
+          st.markdown(
+              f"[👉 Click Here to Send Payment Receipt on WhatsApp]({wa_link})"
+          )
+        else:
+          st.warning("Please enter a valid phone number!")
