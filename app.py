@@ -17,9 +17,13 @@ st.caption("500+ Outlets & Manager Wise Accounting Management")
 
 
 # ------------------------------------------------------------------------------
-# 1. HELPER FUNCTIONS
+# 1. HELPER FUNCTIONS FOR PDF GENERATION
 # ------------------------------------------------------------------------------
-def generate_pdf(dataframe: pd.DataFrame, total_dues_amount: float) -> io.BytesIO:
+def generate_pdf(
+    dataframe: pd.DataFrame,
+    title_suffix: str = "",
+    total_dues_amount: float = 0.0,
+) -> io.BytesIO:
     """Generates a styled PDF report statement using ReportLab."""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -36,8 +40,8 @@ def generate_pdf(dataframe: pd.DataFrame, total_dues_amount: float) -> io.BytesI
     title_style = ParagraphStyle(
         "TitleStyle",
         parent=styles["Title"],
-        fontSize=16,
-        leading=20,
+        fontSize=15,
+        leading=18,
         textColor=colors.HexColor("#D4001A"),
     )
     header_style = ParagraphStyle(
@@ -61,7 +65,8 @@ def generate_pdf(dataframe: pd.DataFrame, total_dues_amount: float) -> io.BytesI
     # Document Header
     elements.append(
         Paragraph(
-            "<b>Coca-Cola Distribution - Account Statement</b>", title_style
+            f"<b>Coca-Cola Distribution - Statement {title_suffix}</b>",
+            title_style,
         )
     )
     elements.append(
@@ -80,7 +85,7 @@ def generate_pdf(dataframe: pd.DataFrame, total_dues_amount: float) -> io.BytesI
     )
     elements.append(Spacer(1, 12))
 
-    # Table Setup (Removed Category, Added Dues Days)
+    # Table Setup
     headers = [
         "ID",
         "Date",
@@ -105,7 +110,7 @@ def generate_pdf(dataframe: pd.DataFrame, total_dues_amount: float) -> io.BytesI
             Paragraph(str(row["Dues Days"]), cell_style),
         ])
 
-    # Dynamic Column Widths for Letter Page
+    # Column Widths for Letter Page
     col_widths = [30, 65, 120, 95, 68, 68, 68, 60]
     pdf_table = Table(table_data, colWidths=col_widths, repeatRows=1)
     pdf_table.setStyle(
@@ -217,7 +222,6 @@ if submit_button:
                     else entry_date.strftime("%Y-%m-%d")
                 )
 
-            # Calculate days gap from entry/due date to today
             if due_date_str != "-":
                 start_dt = datetime.strptime(due_date_str, "%Y-%m-%d").date()
                 dues_days = (datetime.now().date() - start_dt).days
@@ -345,41 +349,121 @@ else:
                 st.error("Invalid Entry ID")
 
 # ------------------------------------------------------------------------------
-# 6. EXPORT & WHATSAPP
+# 6. PDF EXPORT OPTIONS (OUTLET WISE & MANAGER WISE)
 # ------------------------------------------------------------------------------
 st.markdown("---")
-st.subheader("📄 PDF स्टेटमेंट और WhatsApp शेयरिंग")
+st.subheader("📄 PDF रिपोर्ट एक्सपोर्ट (Export PDF Reports)")
 
-col_pdf1, col_pdf2 = st.columns(2)
+pdf_tab1, pdf_tab2, pdf_tab3 = st.tabs([
+    "🏪 Outlet Wise PDF",
+    "👨‍💼 Manager Wise PDF",
+    "📊 Current View PDF",
+])
 
-with col_pdf1:
-    if not df_display.empty:
-        pdf_file = generate_pdf(df_display, total_dues)
+# Tab 1: Outlet-wise PDF Report
+with pdf_tab1:
+    st.write("किसी विशिष्ट Outet की लेज़र रिपोर्ट PDF डाउनलोड करें:")
+    selected_outlet = st.selectbox(
+        "Select Outlet for PDF",
+        options=sorted(list(st.session_state.ledger["Outlet Name"].unique())),
+        key="pdf_outlet_select",
+    )
+    if selected_outlet:
+        df_outlet_pdf = st.session_state.ledger[
+            st.session_state.ledger["Outlet Name"] == selected_outlet
+        ]
+        outlet_dues = (
+            df_outlet_pdf["Udhari (Debit)"].sum()
+            - df_outlet_pdf["Payment (Credit)"].sum()
+        )
+
+        pdf_outlet_file = generate_pdf(
+            df_outlet_pdf,
+            title_suffix=f"- Outlet: {selected_outlet}",
+            total_dues_amount=outlet_dues,
+        )
         st.download_button(
-            label="📥 Download PDF Statement",
-            data=pdf_file,
-            file_name=f"CocaCola_Statement_{datetime.now().strftime('%Y%m%d')}.pdf",
+            label=f"📥 Download PDF Statement for {selected_outlet}",
+            data=pdf_outlet_file,
+            file_name=f"Statement_Outlet_{selected_outlet.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
+
+# Tab 2: Manager-wise PDF Report
+with pdf_tab2:
+    st.write("किसी Manager के अधीन सभी Outlets की संयुक्त PDF रिपोर्ट:")
+    manager_options = ["PIYUSH YADAV", "RUKSHAT ALAM", "SUMIT MGR", "PRAKASH MGR"]
+    selected_manager = st.selectbox(
+        "Select Manager for PDF",
+        options=manager_options,
+        key="pdf_manager_select",
+    )
+    if selected_manager:
+        df_mgr_pdf = st.session_state.ledger[
+            st.session_state.ledger["Manager"] == selected_manager
+        ]
+        mgr_dues = (
+            df_mgr_pdf["Udhari (Debit)"].sum()
+            - df_mgr_pdf["Payment (Credit)"].sum()
+            if not df_mgr_pdf.empty
+            else 0.0
+        )
+
+        if not df_mgr_pdf.empty:
+            pdf_mgr_file = generate_pdf(
+                df_mgr_pdf,
+                title_suffix=f"- Manager: {selected_manager}",
+                total_dues_amount=mgr_dues,
+            )
+            st.download_button(
+                label=f"📥 Download Combined PDF for Manager ({selected_manager})",
+                data=pdf_mgr_file,
+                file_name=f"Statement_Manager_{selected_manager.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+        else:
+            st.info(f"{selected_manager} के लिए कोई डेटा उपलब्ध नहीं है।")
+
+# Tab 3: Current Filtered View PDF Report
+with pdf_tab3:
+    st.write(
+        "वर्तमान में ऊपर चुने गए फ़िल्टर (Filtered View) की PDF डाउनलोड करें:"
+    )
+    if not df_display.empty:
+        pdf_current_file = generate_pdf(
+            df_display,
+            title_suffix="- Filtered View",
+            total_dues_amount=total_dues,
+        )
+        st.download_button(
+            label="📥 Download Current View PDF Statement",
+            data=pdf_current_file,
+            file_name=f"Statement_Filtered_{datetime.now().strftime('%Y%m%d')}.pdf",
             mime="application/pdf",
             use_container_width=True,
         )
     else:
-        st.write("PDF जनरेट करने के लिए डेटा उपलब्ध नहीं है।")
+        st.info("डाउनलोड करने के लिए डेटा उपलब्ध नहीं है।")
 
-with col_pdf2:
-    whatsapp_num = st.text_input(
-        "WhatsApp (Format: 919876543210)", placeholder="91XXXXXXXXXX"
-    )
-    if st.button("WhatsApp Message Link Generate करें", use_container_width=True):
-        if whatsapp_num.strip():
-            # Get max Dues Days for context in WhatsApp Message
-            max_days = (
-                df_display["Dues Days"].max() if not df_display.empty else 0
-            )
-            msg = f"नमस्ते, Coca-Cola Distribution के अनुसार आपका कुल बकाया हिसाब (Total Dues) ₹ {total_dues:,.2f} है। (पुराना बकाया: {max_days} दिनों से)"
-            encoded_msg = pd.Series([msg]).str.replace(" ", "%20").values[0]
-            whatsapp_url = (
-                f"https://api.whatsapp.com/send?phone={whatsapp_num}&text={encoded_msg}"
-            )
-            st.markdown(f"[👉 Click Here to Send Message]({whatsapp_url})")
-        else:
-            st.warning("कृपया मान्य व्हाट्सएप नंबर दर्ज करें!")
+# ------------------------------------------------------------------------------
+# 7. WHATSAPP SHARING SECTION
+# ------------------------------------------------------------------------------
+st.markdown("---")
+st.subheader("💬 WhatsApp शेयरिंग")
+
+whatsapp_num = st.text_input(
+    "WhatsApp Number (Format: 919876543210)", placeholder="91XXXXXXXXXX"
+)
+if st.button("WhatsApp Message Link Generate करें", use_container_width=True):
+    if whatsapp_num.strip():
+        max_days = df_display["Dues Days"].max() if not df_display.empty else 0
+        msg = f"नमस्ते, Coca-Cola Distribution के अनुसार आपका कुल बकाया हिसाब (Total Dues) ₹ {total_dues:,.2f} है। (पुराना बकाया: {max_days} दिनों से)"
+        encoded_msg = pd.Series([msg]).str.replace(" ", "%20").values[0]
+        whatsapp_url = (
+            f"https://api.whatsapp.com/send?phone={whatsapp_num}&text={encoded_msg}"
+        )
+        st.markdown(f"[👉 Click Here to Send Message]({whatsapp_url})")
+    else:
+        st.warning("कृपया मान्य व्हाट्सएप नंबर दर्ज करें!")
