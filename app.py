@@ -657,8 +657,6 @@ init_db()
 
 # ------------------------------------------------------------------------------
 # PDF REPORT GENERATOR
-# DUES DAYS = SECOND LAST
-# PAID ROW = COMPLETE GREEN
 # ------------------------------------------------------------------------------
 def generate_pdf_report(
     df_data,
@@ -781,9 +779,6 @@ def generate_pdf_report(
         spaceAfter=5,
     )
 
-    # --------------------------------------------------------------------------
-    # HEADER
-    # --------------------------------------------------------------------------
     elements.append(
         Paragraph(
             "🥤 MS MAA VINDHYAWASINI TRADERS",
@@ -798,9 +793,6 @@ def generate_pdf_report(
         )
     )
 
-    # --------------------------------------------------------------------------
-    # OUTLET
-    # --------------------------------------------------------------------------
     outlet_name_for_pdf = ""
 
     if "Outlet:" in subtitle_info:
@@ -829,9 +821,6 @@ def generate_pdf_report(
         )
     )
 
-    # --------------------------------------------------------------------------
-    # INFO
-    # --------------------------------------------------------------------------
     elements.append(
         Paragraph(
             f"<b>Statement Info:</b> {subtitle_info} | "
@@ -850,10 +839,6 @@ def generate_pdf_report(
         )
     )
 
-    # --------------------------------------------------------------------------
-    # HEADERS
-    # DUES DAYS SECOND LAST
-    # --------------------------------------------------------------------------
     headers = [
         "Bill Code",
         "Date",
@@ -875,9 +860,6 @@ def generate_pdf_report(
         ]
     ]
 
-    # --------------------------------------------------------------------------
-    # TABLE DATA
-    # --------------------------------------------------------------------------
     for _, row in df_data.iterrows():
 
         status = str(row["Status"])
@@ -928,34 +910,27 @@ def generate_pdf_report(
                     str(row["Bill_No"]),
                     table_cell_style,
                 ),
-
                 Paragraph(
                     str(row["Date"]),
                     table_cell_style,
                 ),
-
                 Paragraph(
                     str(row["Outlet_Name"]),
                     table_cell_style,
                 ),
-
                 Paragraph(
                     f"Rs {row['Bill_Amount']:,.2f}",
                     table_cell_style,
                 ),
-
                 Paragraph(
                     f"Rs {row['Paid_Amount']:,.2f}",
                     green_amount_style,
                 ),
-
                 Paragraph(
                     f"Rs {row['Balance']:,.2f}",
                     balance_style,
                 ),
-
                 status_text,
-
                 Paragraph(
                     f"{days_pending} Days",
                     dues_style,
@@ -963,9 +938,6 @@ def generate_pdf_report(
             ]
         )
 
-    # --------------------------------------------------------------------------
-    # TABLE
-    # --------------------------------------------------------------------------
     t = Table(
         table_data,
         colWidths=[
@@ -988,28 +960,24 @@ def generate_pdf_report(
             (-1, 0),
             colors.HexColor("#1E293B"),
         ),
-
         (
             "ALIGN",
             (0, 0),
             (-1, 0),
             "CENTER",
         ),
-
         (
             "ALIGN",
             (0, 1),
             (-1, -1),
             "LEFT",
         ),
-
         (
             "VALIGN",
             (0, 0),
             (-1, -1),
             "MIDDLE",
         ),
-
         (
             "GRID",
             (0, 0),
@@ -1017,14 +985,12 @@ def generate_pdf_report(
             0.5,
             colors.HexColor("#CBD5E1"),
         ),
-
         (
             "BACKGROUND",
             (0, 1),
             (-1, -1),
             colors.white,
         ),
-
         (
             "PADDING",
             (0, 0),
@@ -1033,9 +999,6 @@ def generate_pdf_report(
         ),
     ]
 
-    # --------------------------------------------------------------------------
-    # PAID = COMPLETE ROW GREEN
-    # --------------------------------------------------------------------------
     for pdf_row_index, (_, pdf_row) in enumerate(
         df_data.iterrows(),
         start=1,
@@ -1051,7 +1014,6 @@ def generate_pdf_report(
                         (-1, pdf_row_index),
                         colors.HexColor("#DCFCE7"),
                     ),
-
                     (
                         "TEXTCOLOR",
                         (0, pdf_row_index),
@@ -1069,9 +1031,6 @@ def generate_pdf_report(
 
     elements.append(t)
 
-    # --------------------------------------------------------------------------
-    # TOTAL NET DUES
-    # --------------------------------------------------------------------------
     total_net_dues = float(
         df_data["Balance"].sum()
     )
@@ -1597,7 +1556,7 @@ with tab_bills:
 
         # ----------------------------------------------------------------------
         # BILL TABLE HEADER
-        # DUES DAYS SECOND LAST
+        # MANAGER BILL CODE KE BAGAL MEIN
         # ----------------------------------------------------------------------
         (
             h_col1,
@@ -1614,9 +1573,9 @@ with tab_bills:
         ) = st.columns(
             [
                 1.0,
+                1.0,
                 0.9,
                 1.2,
-                1.0,
                 1.0,
                 1.0,
                 1.0,
@@ -1628,9 +1587,9 @@ with tab_bills:
         )
 
         h_col1.write("**Bill Code**")
-        h_col2.write("**Date**")
-        h_col3.write("**Outlet**")
-        h_col4.write("**Manager**")
+        h_col2.write("**Manager**")
+        h_col3.write("**Date**")
+        h_col4.write("**Outlet**")
         h_col5.write("**Bill Amt**")
         h_col6.write("**Paid Amt**")
         h_col7.write("**Balance**")
@@ -1670,9 +1629,9 @@ with tab_bills:
                 ) = st.columns(
                     [
                         1.0,
+                        1.0,
                         0.9,
                         1.2,
-                        1.0,
                         1.0,
                         1.0,
                         1.0,
@@ -1687,16 +1646,17 @@ with tab_bills:
                     f"**{row['Bill_No']}**"
                 )
 
+                # MANAGER AB BILL CODE KE BAGAL MEIN
                 c2.write(
-                    row["Date"]
+                    row["Manager_Name"]
                 )
 
                 c3.write(
-                    row["Outlet_Name"]
+                    row["Date"]
                 )
 
                 c4.write(
-                    row["Manager_Name"]
+                    row["Outlet_Name"]
                 )
 
                 c5.write(
@@ -2029,15 +1989,11 @@ with tab_bills:
                 axis=1,
             )
 
-            # --------------------------------------------------------------
-            # HIGHEST DUES DAYS FIRST
-            # --------------------------------------------------------------
             pdf_df = pdf_df.sort_values(
                 by="_Dues_Days",
                 ascending=False,
             )
 
-            # Temporary helper column remove
             pdf_df = pdf_df.drop(
                 columns=["_Dues_Days"]
             )
@@ -2076,9 +2032,6 @@ with tab_bills:
 
         with wa_outlet_col1:
 
-            # --------------------------------------------------------------
-            # OUTLET LIST
-            # --------------------------------------------------------------
             wa_outlet_options = sorted(
                 df_view["Outlet_Name"]
                 .dropna()
@@ -2113,17 +2066,11 @@ with tab_bills:
 
             else:
 
-                # ----------------------------------------------------------
-                # SELECTED OUTLET ALL BILLS
-                # ----------------------------------------------------------
                 outlet_df = df_view[
                     df_view["Outlet_Name"]
                     == selected_wa_outlet
                 ].copy()
 
-                # ----------------------------------------------------------
-                # CALCULATE DUES DAYS
-                # ----------------------------------------------------------
                 outlet_df["_Dues_Days"] = outlet_df.apply(
                     lambda r: (
                         0
@@ -2135,17 +2082,11 @@ with tab_bills:
                     axis=1,
                 )
 
-                # ----------------------------------------------------------
-                # HIGHEST DUES DAYS FIRST
-                # ----------------------------------------------------------
                 outlet_df = outlet_df.sort_values(
                     by="_Dues_Days",
                     ascending=False,
                 )
 
-                # ----------------------------------------------------------
-                # OUTLET TOTALS
-                # ----------------------------------------------------------
                 total_bill_amount = float(
                     outlet_df["Bill_Amount"].sum()
                 )
@@ -2158,9 +2099,6 @@ with tab_bills:
                     outlet_df["Balance"].sum()
                 )
 
-                # ----------------------------------------------------------
-                # MESSAGE HEADER
-                # ----------------------------------------------------------
                 msg = (
                     "*🥤 MS MAA VINDHYAWASINI TRADERS*\n"
                     "*OUTLET-WISE BILL STATEMENT / PAYMENT STATUS*\n"
@@ -2171,9 +2109,6 @@ with tab_bills:
                     "-----------------------------------\n"
                 )
 
-                # ----------------------------------------------------------
-                # ALL BILLS OF SELECTED OUTLET
-                # ----------------------------------------------------------
                 for _, wa_row in outlet_df.iterrows():
 
                     wa_is_paid = (
@@ -2216,9 +2151,6 @@ with tab_bills:
                         "-----------------------------\n"
                     )
 
-                # ----------------------------------------------------------
-                # OUTLET TOTAL SUMMARY
-                # ----------------------------------------------------------
                 msg += (
                     "\n*📊 OUTLET TOTAL SUMMARY*\n"
                     "-----------------------------------\n"
@@ -2231,9 +2163,6 @@ with tab_bills:
                     "-----------------------------------\n"
                 )
 
-                # ----------------------------------------------------------
-                # PAYMENT STATUS
-                # ----------------------------------------------------------
                 if total_balance <= 0:
 
                     msg += (
@@ -2248,18 +2177,12 @@ with tab_bills:
                         "Please clear the outstanding amount.\n"
                     )
 
-                # ----------------------------------------------------------
-                # FOOTER
-                # ----------------------------------------------------------
                 msg += (
                     "-----------------------------------\n"
                     "*MS MAA VINDHYAWASINI TRADERS*\n"
                     "Authorized Coca-Cola Distributor"
                 )
 
-                # ----------------------------------------------------------
-                # ENCODE WHATSAPP MESSAGE
-                # ----------------------------------------------------------
                 encoded_msg = urllib.parse.quote(
                     msg
                 )
@@ -2278,9 +2201,6 @@ with tab_bills:
                     f"&text={encoded_msg}"
                 )
 
-                # ----------------------------------------------------------
-                # WHATSAPP BUTTON
-                # ----------------------------------------------------------
                 st.markdown(
                     f"""
                     <a href="{wa_link}"
@@ -2424,9 +2344,6 @@ with tab_payments:
 
                     st.rerun()
 
-                # ------------------------------------------------------------------
-                # PAYMENT DELETE CONFIRMATION
-                # ------------------------------------------------------------------
                 if st.session_state.get(
                     f"confirm_delete_payment_{p_row['Payment_ID']}",
                     False,
@@ -2501,10 +2418,6 @@ with tab_payments:
 
                             st.rerun()
 
-        # ----------------------------------------------------------------------
-        # WHATSAPP PAYMENT RECEIPT
-        # Written message only
-        # ----------------------------------------------------------------------
         st.markdown("---")
 
         st.markdown(
