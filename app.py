@@ -3,7 +3,7 @@ from datetime import datetime
 import pandas as pd
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 import streamlit as st
 
@@ -12,38 +12,16 @@ st.set_page_config(
     page_title="Coca-Cola Credit Tracker", page_icon="🥤", layout="wide"
 )
 
-# Custom CSS for Red & Green Button Styling
+# Custom CSS for UI Enhancement
 st.markdown(
     """
     <style>
-    /* Red Button for Debit/Udhari */
-    div.stButton > button.debit-btn {
-        background-color: #d9534f !important;
-        color: white !important;
+    /* Styling for clear readability */
+    .stSelectbox label, .stTextInput label, .stNumberInput label, .stDateInput label {
         font-weight: bold !important;
-        border-radius: 8px !important;
-        border: none !important;
-        height: 45px !important;
-    }
-    div.stButton > button.debit-btn:hover {
-        background-color: #c9302c !important;
-    }
-    
-    /* Green Button for Credit/Payment */
-    div.stButton > button.credit-btn {
-        background-color: #5cb85c !important;
-        color: white !important;
-        font-weight: bold !important;
-        border-radius: 8px !important;
-        border: none !important;
-        height: 45px !important;
-    }
-    div.stButton > button.credit-btn:hover {
-        background-color: #4cae4c !important;
     }
     </style>
 """,
-    unsafe_allow_style_ Spaniards=True,
     unsafe_allow_html=True,
 )
 
@@ -149,7 +127,6 @@ def generate_pdf(
             Paragraph(str(row["Dues Days"]), cell_style),
         ])
 
-    # Dynamic Column Widths
     col_widths = [25, 65, 115, 85, 55, 65, 65, 65, 42]
     pdf_table = Table(table_data, colWidths=col_widths, repeatRows=1)
     pdf_table.setStyle(
@@ -205,7 +182,7 @@ with st.sidebar.expander("💾 Backup & Restore Data"):
         try:
             st.session_state.ledger = pd.read_csv(uploaded_file)
             st.session_state.outlets_list = sorted(
-                list(st.session_state.ledger["Outlet Name"].unique())
+                list(st.session_state.ledger["Outlet Name"].dropna().unique())
             )
             st.success("Ledger restored successfully!")
         except Exception as e:
@@ -220,8 +197,9 @@ with st.sidebar.expander("💾 Backup & Restore Data"):
             mime="text/csv",
         )
 
+
 # Helper function to auto-save and update master outlet list
-def save_outlet_name(name_str: str):
+def save_outlet_name(name_str: str) -> str:
     clean_name = name_str.strip().title()
     if clean_name and clean_name not in st.session_state.outlets_list:
         st.session_state.outlets_list.append(clean_name)
@@ -230,9 +208,9 @@ def save_outlet_name(name_str: str):
 
 
 # ------------------------------------------------------------------------------
-# 3. RED & GREEN ENTRY BUTTONS & PANELS (EASY ENTRY SECTION)
+# 3. RED & GREEN ENTRY TABS (EASY VISUAL ENTRY)
 # ------------------------------------------------------------------------------
-st.markdown("### 📝 नई एंट्री दर्ज करें (Quick Entry Panel)")
+st.markdown("### 📝 एंट्री दर्ज करें (Quick Entry Panel)")
 
 entry_tab1, entry_tab2 = st.tabs([
     "🔴 नई उधारी बिल दर्ज करें (New Debit Entry)",
@@ -241,19 +219,29 @@ entry_tab1, entry_tab2 = st.tabs([
 
 # 🔴 RED TAB - DEBIT / UDHARI ENTRY
 with entry_tab1:
-    st.error("🔴 **उधारी (Debit) बिल एंट्री फ़ॉर्म**")
+    st.error("🔴 **उधारी (Debit) बिल की प्रविष्टि करें**")
     with st.form(key="debit_form", clear_on_submit=True):
-        col_d1, col_d2, col_d3 = st.columns(3)
+        col_d1, col_d2 = st.columns(2)
 
         with col_d1:
             d_date = st.date_input(
                 "Entry Date (तारीख)", datetime.now(), format="DD/MM/YYYY"
             )
+
             # Outlet Selection or Custom Input
-            existing_outlets = ["+ Naya Outlet Add Karen"] + st.session_state.outlets_list
-            selected_outlet_d = st.selectbox("Outlet चुनें", existing_outlets, key="d_out_select")
+            existing_outlets = [
+                "+ Naya Outlet Add Karen"
+            ] + st.session_state.outlets_list
+            selected_outlet_d = st.selectbox(
+                "Outlet का नाम चुनें (या नया जोड़ें)",
+                existing_outlets,
+                key="d_out_select",
+            )
+
             if selected_outlet_d == "+ Naya Outlet Add Karen":
-                d_outlet = st.text_input("नए दुकान/आउटलेट का नाम दर्ज करें", key="d_out_text")
+                d_outlet = st.text_input(
+                    "नए दुकान/आउटलेट का नाम दर्ज करें", key="d_out_text"
+                )
             else:
                 d_outlet = selected_outlet_d
 
@@ -263,12 +251,14 @@ with entry_tab1:
                 ["PIYUSH YADAV", "RUKSHAT ALAM", "SUMIT MGR", "PRAKASH MGR"],
                 key="d_mgr_select",
             )
-            d_amount = st.number_input("उधारी बिल राशि (₹)", min_value=0.0, step=100.0, key="d_amt_input")
+            d_amount = st.number_input(
+                "उधारी बिल राशि (₹)",
+                min_value=0.0,
+                step=100.0,
+                key="d_amt_input",
+            )
 
-        with col_d3:
-            st.write("")
-            st.write("")
-            submit_debit = st.form_submit_button("🔴 Udhari Save Karen")
+        submit_debit = st.form_submit_button("🔴 Udhari Save Karen")
 
     if submit_debit:
         if not d_outlet.strip():
@@ -282,7 +272,9 @@ with entry_tab1:
             outlet_df = st.session_state.ledger[
                 st.session_state.ledger["Outlet Name"] == final_outlet
             ]
-            prev_balance = outlet_df["Balance"].iloc[-1] if not outlet_df.empty else 0.0
+            prev_balance = (
+                outlet_df["Balance"].iloc[-1] if not outlet_df.empty else 0.0
+            )
             current_balance = prev_balance + d_amount
 
             # Calculate Dues Days
@@ -291,7 +283,7 @@ with entry_tab1:
             dues_days = (datetime.now().date() - start_dt).days
 
             new_id = (
-                st.session_state.ledger["ID"].max() + 1
+                int(st.session_state.ledger["ID"].max()) + 1
                 if not st.session_state.ledger.empty
                 else 1
             )
@@ -313,53 +305,86 @@ with entry_tab1:
                 [st.session_state.ledger, pd.DataFrame([new_entry])],
                 ignore_index=True,
             )
-            st.success(f"🔴 ₹ {d_amount:,.2f} Udhari Entry Recorded for {final_outlet}!")
+            st.success(
+                f"🔴 ₹ {d_amount:,.2f} Udhari Entry Recorded for {final_outlet}!"
+            )
             st.rerun()
 
 
 # 🟢 GREEN TAB - CREDIT / PAYMENT RECEIVED ENTRY
 with entry_tab2:
-    st.success("🟢 **पेमेंट जमा / किश्त (Credit Entry) फ़ॉर्म**")
-    
+    st.success("🟢 **पेमेंट जमा / किश्त (Credit Entry) की प्रविष्टि करें**")
+
     if not st.session_state.outlets_list:
         st.info("अभी कोई आउटलेट पंजीकृत नहीं है। पहले उधारी एंट्री दर्ज करें।")
     else:
         with st.form(key="credit_form", clear_on_submit=True):
-            col_c1, col_c2, col_c3 = st.columns(3)
+            col_c1, col_c2 = st.columns(2)
 
             with col_c1:
                 c_date = st.date_input(
                     "Payment Date (तारीख)", datetime.now(), format="DD/MM/YYYY"
                 )
-                c_outlet = st.selectbox("Outlet चुनें", st.session_state.outlets_list, key="c_out_select")
+                c_outlet = st.selectbox(
+                    "Outlet चुनें",
+                    st.session_state.outlets_list,
+                    key="c_out_select",
+                )
 
-            # Get current due for selected outlet
-            c_outlet_df = st.session_state.ledger[
-                st.session_state.ledger["Outlet Name"] == c_outlet
-            ]
-            c_curr_due = c_outlet_df["Balance"].iloc[-1] if not c_outlet_df.empty else 0.0
-            c_outlet_mgr = c_outlet_df["Manager"].iloc[-1] if not c_outlet_df.empty else "PIYUSH YADAV"
+                # Get current balance for selected outlet
+                c_outlet_df = st.session_state.ledger[
+                    st.session_state.ledger["Outlet Name"] == c_outlet
+                ]
+                c_curr_due = (
+                    c_outlet_df["Balance"].iloc[-1]
+                    if not c_outlet_df.empty
+                    else 0.0
+                )
+                c_outlet_mgr = (
+                    c_outlet_df["Manager"].iloc[-1]
+                    if not c_outlet_df.empty
+                    else "PIYUSH YADAV"
+                )
+
+                st.info(f"👉 **{c_outlet} का कुल बकाया:** ₹ {c_curr_due:,.2f}")
 
             with col_c2:
-                st.write(f"**मौजूदा बकाया balance:** ₹ {c_curr_due:,.2f}")
                 c_amount = st.number_input(
-                    "जमा राशि (Payment ₹)", min_value=0.0, step=100.0, key="c_amt_input"
+                    "जमा राशि (Payment Amount ₹)",
+                    min_value=0.0,
+                    step=100.0,
+                    key="c_amt_input",
                 )
                 c_mode = st.selectbox(
                     "Payment Mode (भुगतान का प्रकार)",
-                    ["Cash", "Online (UPI/GPay/PhonePe)", "Bank Transfer (NEFT/RTGS)", "Cheque"],
+                    [
+                        "Cash",
+                        "Online (UPI/GPay/PhonePe)",
+                        "Bank Transfer (NEFT/RTGS)",
+                        "Cheque",
+                    ],
                     key="c_mode_select",
                 )
 
-            with col_c3:
+                mgr_options = [
+                    "PIYUSH YADAV",
+                    "RUKSHAT ALAM",
+                    "SUMIT MGR",
+                    "PRAKASH MGR",
+                ]
+                mgr_idx = (
+                    mgr_options.index(c_outlet_mgr)
+                    if c_outlet_mgr in mgr_options
+                    else 0
+                )
                 c_manager = st.selectbox(
                     "Assigned Manager",
-                    ["PIYUSH YADAV", "RUKSHAT ALAM", "SUMIT MGR", "PRAKASH MGR"],
-                    index=["PIYUSH YADAV", "RUKSHAT ALAM", "SUMIT MGR", "PRAKASH MGR"].index(c_outlet_mgr) if c_outlet_mgr in ["PIYUSH YADAV", "RUKSHAT ALAM", "SUMIT MGR", "PRAKASH MGR"] else 0,
+                    mgr_options,
+                    index=mgr_idx,
                     key="c_mgr_select",
                 )
-                st.write("")
-                submit_credit = st.form_submit_button("🟢 Payment Jama Karen")
+
+            submit_credit = st.form_submit_button("🟢 Payment Jama Karen")
 
         if submit_credit:
             if c_amount <= 0:
@@ -374,17 +399,20 @@ with entry_tab2:
                 else:
                     due_dt_str = (
                         c_outlet_df["Due Date"].iloc[-1]
-                        if not c_outlet_df.empty and "Due Date" in c_outlet_df.columns
+                        if not c_outlet_df.empty
+                        and "Due Date" in c_outlet_df.columns
                         else c_date.strftime("%Y-%m-%d")
                     )
                     if due_dt_str != "-":
-                        start_dt = datetime.strptime(due_dt_str, "%Y-%m-%d").date()
+                        start_dt = datetime.strptime(
+                            due_dt_str, "%Y-%m-%d"
+                        ).date()
                         d_days = (datetime.now().date() - start_dt).days
                     else:
                         d_days = 0
 
                 new_id = (
-                    st.session_state.ledger["ID"].max() + 1
+                    int(st.session_state.ledger["ID"].max()) + 1
                     if not st.session_state.ledger.empty
                     else 1
                 )
@@ -407,7 +435,7 @@ with entry_tab2:
                     ignore_index=True,
                 )
                 st.success(
-                    f"🟢 ₹ {c_amount:,.2f} ({c_mode}) Payment Successfully Jama for {c_outlet}!"
+                    f"🟢 ₹ {c_amount:,.2f} ({c_mode}) Payment Jama Successfully for {c_outlet}!"
                 )
                 st.rerun()
 
@@ -415,7 +443,7 @@ with entry_tab2:
 # 4. FILTERS & METRICS
 # ------------------------------------------------------------------------------
 st.markdown("---")
-st.subheader("🔍 लेजर और उधारी फ़िल्टर (Filters)")
+st.subheader("🔍 लेजर फ़िल्टर (Search & Filter)")
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -423,16 +451,16 @@ with col1:
     filter_outlet = st.selectbox("Outlet Wise", outlet_list)
 with col2:
     mgr_list = ["All Managers"] + sorted(
-        list(st.session_state.ledger["Manager"].unique())
+        list(st.session_state.ledger["Manager"].dropna().unique())
     )
     filter_mgr = st.selectbox("Manager Wise", mgr_list)
 with col3:
     mode_list = ["All Modes"] + sorted(
-        list(st.session_state.ledger["Payment Mode"].unique())
+        list(st.session_state.ledger["Payment Mode"].dropna().unique())
     )
     filter_mode = st.selectbox("Payment Mode Wise", mode_list)
 
-# Execute Filters
+# Filter Logic
 df_display = st.session_state.ledger.copy()
 if filter_outlet != "All Outlets":
     df_display = df_display[df_display["Outlet Name"] == filter_outlet]
@@ -441,7 +469,7 @@ if filter_mgr != "All Managers":
 if filter_mode != "All Modes":
     df_display = df_display[df_display["Payment Mode"] == filter_mode]
 
-# Summary Dashboard
+# Summary Dashboard Metrics
 total_debit = (
     df_display["Udhari (Debit)"].sum() if not df_display.empty else 0.0
 )
@@ -459,12 +487,11 @@ m3.metric("🔴 कुल बकाया (Net Dues)", f"₹ {total_dues:,.2f}")
 # 5. RECORDS TABLE & DELETION
 # ------------------------------------------------------------------------------
 st.markdown("---")
-st.subheader("📋 उधारी और पेमेंट रिकॉर्ड (Ledger Records)")
+st.subheader("📋 लेजर रिकॉर्ड्स टेबल")
 
 if df_display.empty:
-    st.info("कोई रिकॉर्ड नहीं मिला।")
+    st.info("कोई रिकॉर्ड उपलब्ध नहीं है।")
 else:
-    # Interactive Dataframe Display
     st.dataframe(
         df_display[
             [
@@ -500,7 +527,6 @@ else:
         hide_index=True,
     )
 
-    # Deletion Panel
     with st.expander("🗑️ Entry Delete Karen (गलत एंट्री हटाएं)"):
         del_id = st.number_input(
             "Enter Entry ID to delete:", min_value=1, step=1
@@ -510,20 +536,21 @@ else:
                 st.session_state.ledger = st.session_state.ledger[
                     st.session_state.ledger["ID"] != del_id
                 ].reset_index(drop=True)
-                # Refresh Outlet list
                 st.session_state.outlets_list = sorted(
-                    list(st.session_state.ledger["Outlet Name"].unique())
+                    list(
+                        st.session_state.ledger["Outlet Name"].dropna().unique()
+                    )
                 )
                 st.success(f"Record #{del_id} deleted successfully!")
                 st.rerun()
             else:
-                st.error("Invalid Entry ID")
+                st.error("अमान्य ID! कृपया सही ID दर्ज करें।")
 
 # ------------------------------------------------------------------------------
 # 6. PDF EXPORT OPTIONS
 # ------------------------------------------------------------------------------
 st.markdown("---")
-st.subheader("📄 PDF रिपोर्ट एक्सपोर्ट (Export PDF Reports)")
+st.subheader("📄 PDF रिपोर्ट एक्सपोर्ट")
 
 pdf_tab1, pdf_tab2, pdf_tab3 = st.tabs([
     "🏪 Outlet Wise PDF",
@@ -533,7 +560,6 @@ pdf_tab1, pdf_tab2, pdf_tab3 = st.tabs([
 
 # Tab 1: Outlet-wise PDF Report
 with pdf_tab1:
-    st.write("किसी विशिष्ट Outlet की लेज़र रिपोर्ट PDF डाउनलोड करें:")
     selected_outlet_pdf = st.selectbox(
         "Select Outlet for PDF",
         options=st.session_state.outlets_list,
@@ -563,7 +589,6 @@ with pdf_tab1:
 
 # Tab 2: Manager-wise PDF Report
 with pdf_tab2:
-    st.write("किसी Manager के अधीन सभी Outlets की संयुक्त PDF रिपोर्ट:")
     manager_options = ["PIYUSH YADAV", "RUKSHAT ALAM", "SUMIT MGR", "PRAKASH MGR"]
     selected_manager = st.selectbox(
         "Select Manager for PDF",
@@ -599,7 +624,6 @@ with pdf_tab2:
 
 # Tab 3: Current Filtered View PDF Report
 with pdf_tab3:
-    st.write("वर्तमान फ़िल्टर (Filtered View) की PDF डाउनलोड करें:")
     if not df_display.empty:
         pdf_current_file = generate_pdf(
             df_display,
