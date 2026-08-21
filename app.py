@@ -50,12 +50,14 @@ st.markdown(
 )
 
 st.title("🥤 MS MAA VINDHYAWASINI TRADERS (COCA COLA)")
-st.caption("Bill-Wise Ledger System with Auto Bill Codes & Payment Clearance")
+st.caption(
+    "Bill-Wise Ledger System with Instant Auto Bill Codes (NAME + SERIAL NO)"
+)
 
 # ------------------------------------------------------------------------------
 # 1. DATABASE MANAGEMENT
 # ------------------------------------------------------------------------------
-DB_FILE = "khatabook_billwise_v4.db"
+DB_FILE = "khatabook_billwise_v5.db"
 
 
 def init_db():
@@ -132,25 +134,34 @@ def get_outlets():
   return outlets
 
 
-def generate_auto_bill_code(outlet_name):
-  if not outlet_name or outlet_name == "+ Add New Customer/Outlet":
-    clean_code = "CUST"
-  else:
-    clean_code = (
-        "".join(e for e in outlet_name if e.isalnum()).upper()[:4]
-        if outlet_name
-        else "CUST"
-    )
+# NAME + SL NUMBER GENERATOR FUNCTION
+def generate_bill_code(outlet_name):
+  if not outlet_name or outlet_name.strip() == "":
+    return "BILL-1"
+
+  # नाम में से केवल अक्षर/नंबर लेना (Spaces या स्पेशल कैरेक्टर हटाकर)
+  clean_name = (
+      "".join(e for e in outlet_name if e.isalnum()).upper()
+      if outlet_name
+      else "BILL"
+  )
+  if len(clean_name) == 0:
+    clean_name = "BILL"
+
+  # अगर नाम बड़ा है तो पहले 4-5 अक्षर (जैसे: RAM, RAHUL)
+  short_code = clean_name[:5]
 
   conn = sqlite3.connect(DB_FILE)
   c = conn.cursor()
+  # चेक करें कि इस नाम के कितने बिल पहले से हैं
   c.execute(
-      "SELECT COUNT(*) FROM bills WHERE Outlet_Name = ?", (outlet_name,)
+      "SELECT COUNT(*) FROM bills WHERE Outlet_Name = ?", (outlet_name.strip(),)
   )
   count = c.fetchone()[0] + 1
   conn.close()
 
-  return f"{clean_code}-{count}"
+  # नाम + Serial No. (e.g., RAM-1, RAHUL-2)
+  return f"{short_code}-{count}"
 
 
 def save_bill_to_db(bill_no, date_str, mgr, outlet, amount, note):
@@ -496,15 +507,22 @@ with col_left:
   )
 
   if selected_b_outlet == "+ Add New Customer/Outlet":
-    b_outlet = st.text_input("Enter New Store Name", key="b_outlet_text")
+    b_outlet = st.text_input(
+        "Enter Store Name (दुकान/ग्राहक का नाम)",
+        placeholder="e.g. RAM TRADERS",
+        key="b_outlet_text",
+    )
   else:
     b_outlet = selected_b_outlet
 
-  suggested_code = generate_auto_bill_code(b_outlet)
+  # REAL-TIME AUTO CODE GENERATION (NAME + SL)
+  auto_generated_code = generate_bill_code(b_outlet)
+
   b_no = st.text_input(
-      "Auto Bill Code (कस्टमर कोड + नंबर)",
-      value=suggested_code,
+      "Auto Bill Code (नाम + सीरियल नंबर)",
+      value=auto_generated_code,
       key="b_no_input",
+      help="यह नाम और सीरियल नंबर के हिसाब से अपने आप बन रहा है।",
   )
 
   b_amount = st.number_input(
@@ -521,7 +539,7 @@ with col_left:
         not bills_df.empty
         and b_no.strip() in bills_df["Bill_No"].astype(str).values
     ):
-      st.error(f"Bill Code '{b_no}' already exists! Use a unique Bill Code.")
+      st.error(f"Bill Code '{b_no}' already exists! System generated a new code.")
     else:
       final_outlet = b_outlet.strip().title()
       formatted_date = b_date.strftime("%d-%m-%Y")
