@@ -44,12 +44,11 @@ st.title("🥤 MS MAA VINDHYAWASINI TRADERS (COCA COLA)")
 st.caption("Manage sales managers, outlets/customers, debit/credit entries, due days, and export reports")
 
 # ------------------------------------------------------------------------------
-# 1. DATABASE MANAGEMENT (DATABASE SE DATA AUTOMATIC RESTORE HOGA)
+# 1. DATABASE MANAGEMENT
 # ------------------------------------------------------------------------------
 DB_FILE = "khatabook.db"
 
 def init_db():
-    """Database tables create karta hai agar exist na karein."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("""
@@ -70,26 +69,17 @@ def init_db():
             name TEXT PRIMARY KEY
         )
     """)
-    # Default Manager insert karein agar koi na ho
     c.execute("INSERT OR IGNORE INTO managers (name) VALUES ('Default Manager')")
     conn.commit()
     conn.close()
 
 def load_data_from_db():
-    """Database se saara ledger aur manager list load karta hai."""
     conn = sqlite3.connect(DB_FILE)
-    
-    # Ledger Table
     df = pd.read_sql_query("SELECT ID, Date, Manager_Name as 'Manager Name', Outlet_Name as 'Outlet Name', Type, Debit as 'Debit (You Gave)', Credit as 'Credit (You Got)', Balance, Note FROM ledger", conn)
-    
-    # Managers Table
     mgr_df = pd.read_sql_query("SELECT name FROM managers", conn)
     managers_list = mgr_df["name"].tolist() if not mgr_df.empty else ["Default Manager"]
-    
-    # Outlets List
     outlets_list = sorted(list(df["Outlet Name"].dropna().unique())) if not df.empty else []
     
-    # Outlet Manager Map
     outlet_mgr_map = {}
     if not df.empty:
         for idx, row in df.iterrows():
@@ -98,7 +88,7 @@ def load_data_from_db():
     conn.close()
     return df, managers_list, outlets_list, outlet_mgr_map
 
-# DB Initialize karein
+# DB Initialize
 init_db()
 
 # Load Data into Session State
@@ -108,9 +98,7 @@ st.session_state.managers_list = mgrs
 st.session_state.outlets_list = outlets
 st.session_state.outlet_manager_map = mgr_map
 
-
 def save_entry_to_db(entry):
-    """Nayi entry ko database me permanently save karta hai."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("""
@@ -130,7 +118,6 @@ def save_entry_to_db(entry):
     conn.close()
 
 def delete_entry_from_db(entry_id):
-    """Entry ko ID ke hisab se delete karta hai."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("DELETE FROM ledger WHERE ID = ?", (entry_id,))
@@ -139,7 +126,6 @@ def delete_entry_from_db(entry_id):
     recalculate_balances_in_db()
 
 def save_manager_to_db(mgr_str):
-    """Naya manager DB me save karta hai."""
     clean_mgr = mgr_str.strip().title()
     if clean_mgr:
         conn = sqlite3.connect(DB_FILE)
@@ -149,7 +135,6 @@ def save_manager_to_db(mgr_str):
         conn.close()
 
 def recalculate_balances_in_db():
-    """Delete ke baad sabhi entries ka balance fir se update karta hai."""
     conn = sqlite3.connect(DB_FILE)
     df = pd.read_sql_query("SELECT * FROM ledger ORDER BY ID ASC", conn)
     
@@ -168,129 +153,180 @@ def recalculate_balances_in_db():
         conn.commit()
     conn.close()
 
-def generate_pdf_report(df_data, report_title="Khatabook Statement", subtitle_info=""):
+# ------------------------------------------------------------------------------
+# ENHANCED & BEAUTIFIED PDF GENERATOR
+# ------------------------------------------------------------------------------
+def generate_pdf_report(df_data, report_title="CUSTOMER ACCOUNT STATEMENT", subtitle_info=""):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,
         pagesize=A4,
-        rightMargin=30,
-        leftMargin=30,
-        topMargin=30,
-        bottomMargin=30,
+        rightMargin=25,
+        leftMargin=25,
+        topMargin=25,
+        bottomMargin=25,
     )
     elements = []
 
     styles = getSampleStyleSheet()
+    
+    # Custom Typography Styles
     title_style = ParagraphStyle(
         "DocTitle",
         parent=styles["Heading1"],
-        fontSize=18,
-        textColor=colors.HexColor("#1E293B"),
-        spaceAfter=4,
+        fontSize=20,
+        leading=24,
+        textColor=colors.HexColor("#111827"),
+        fontName="Helvetica-Bold",
+        spaceAfter=2,
     )
-    sub_style = ParagraphStyle(
+    sub_title_style = ParagraphStyle(
         "DocSubTitle",
         parent=styles["Normal"],
-        fontSize=10,
-        textColor=colors.HexColor("#64748B"),
-        spaceAfter=15,
+        fontSize=11,
+        leading=14,
+        textColor=colors.HexColor("#B91C1C"),
+        fontName="Helvetica-Bold",
+        spaceAfter=6,
     )
+    info_style = ParagraphStyle(
+        "DocInfo",
+        parent=styles["Normal"],
+        fontSize=9,
+        leading=12,
+        textColor=colors.HexColor("#475569"),
+        spaceAfter=12,
+    )
+    
     table_hdr_style = ParagraphStyle(
         "TableHdr",
         parent=styles["Normal"],
         fontSize=9,
-        textColor=colors.whitesmoke,
+        leading=11,
+        textColor=colors.white,
         fontName="Helvetica-Bold",
+        alignment=0
     )
+    
     table_cell_style = ParagraphStyle(
         "TableCell",
         parent=styles["Normal"],
-        fontSize=8,
+        fontSize=8.5,
+        leading=11,
         textColor=colors.HexColor("#334155"),
     )
-
-    elements.append(Paragraph(f"🥤 MS MAA VINDHYAWASINI TRADERS", title_style))
-    elements.append(
-        Paragraph(
-            f"{subtitle_info} | Generated on: {datetime.now().strftime('%d-%m-%Y %H:%M')}",
-            sub_style,
-        )
+    
+    # Color Specific Text Styles for Dues and Received
+    red_cell_style = ParagraphStyle(
+        "RedCell",
+        parent=table_cell_style,
+        textColor=colors.HexColor("#DC2626"),
+        fontName="Helvetica-Bold",
     )
+    green_cell_style = ParagraphStyle(
+        "GreenCell",
+        parent=table_cell_style,
+        textColor=colors.HexColor("#16A34A"),
+        fontName="Helvetica-Bold",
+    )
+    bold_cell_style = ParagraphStyle(
+        "BoldCell",
+        parent=table_cell_style,
+        fontName="Helvetica-Bold",
+    )
+
+    # 1. HEADER SECTION
+    elements.append(Paragraph("🥤 MS MAA VINDHYAWASINI TRADERS", title_style))
+    elements.append(Paragraph(" AUTHORIZED COCA-COLA DISTRIBUTOR", sub_title_style))
+    elements.append(Paragraph(f"<b>Statement Info:</b> {subtitle_info} | <b>Date:</b> {datetime.now().strftime('%d-%m-%Y %I:%M %p')}", info_style))
+    
     elements.append(
         HRFlowable(
             width="100%",
-            thickness=1.5,
-            color=colors.HexColor("#0284C7"),
-            spaceAfter=15,
+            thickness=2,
+            color=colors.HexColor("#DC2626"),
+            spaceAfter=12,
         )
     )
 
+    # 2. SUMMARY CARDS
     total_given = df_data["Debit (You Gave)"].sum()
     total_got = df_data["Credit (You Got)"].sum()
     total_due = total_given - total_got
 
     summary_data = [
         [
-            Paragraph(f"<b>Total Given:</b> Rs {total_given:,.2f}", table_cell_style),
-            Paragraph(f"<b>Total Got:</b> Rs {total_got:,.2f}", table_cell_style),
-            Paragraph(
-                f"<b>Net Due Balance:</b> Rs {total_due:,.2f}",
-                ParagraphStyle(
-                    "DueStyle",
-                    parent=table_cell_style,
-                    textColor=colors.HexColor("#DC2626"),
-                    fontName="Helvetica-Bold",
-                ),
-            ),
+            Paragraph("TOTAL DUES", ParagraphStyle("H1", parent=table_cell_style, fontName="Helvetica-Bold", textColor=colors.HexColor("#991B1B"), alignment=1)),
+            Paragraph("TOTAL RECEIVED", ParagraphStyle("H2", parent=table_cell_style, fontName="Helvetica-Bold", textColor=colors.HexColor("#166534"), alignment=1)),
+            Paragraph("NET BALANCE DUE", ParagraphStyle("H3", parent=table_cell_style, fontName="Helvetica-Bold", textColor=colors.HexColor("#1E3A8A"), alignment=1)),
+        ],
+        [
+            Paragraph(f"Rs {total_given:,.2f}", ParagraphStyle("V1", parent=table_cell_style, fontName="Helvetica-Bold", fontSize=12, textColor=colors.HexColor("#DC2626"), alignment=1)),
+            Paragraph(f"Rs {total_got:,.2f}", ParagraphStyle("V2", parent=table_cell_style, fontName="Helvetica-Bold", fontSize=12, textColor=colors.HexColor("#16A34A"), alignment=1)),
+            Paragraph(f"Rs {total_due:,.2f}", ParagraphStyle("V3", parent=table_cell_style, fontName="Helvetica-Bold", fontSize=12, textColor=colors.HexColor("#1D4ED8"), alignment=1)),
         ]
     ]
-    sum_table = Table(summary_data, colWidths=[170, 170, 190])
+    
+    sum_table = Table(summary_data, colWidths=[180, 180, 185])
     sum_table.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
-                ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#CBD5E1")),
-                ("PADDING", (0, 0), (-1, -1), 8),
+                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#FEF2F2")),
+                ("BACKGROUND", (1, 0), (1, -1), colors.HexColor("#F0FDF4")),
+                ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#EFF6FF")),
+                ("BOX", (0, 0), (0, -1), 1, colors.HexColor("#FCA5A5")),
+                ("BOX", (1, 0), (1, -1), 1, colors.HexColor("#86EFAC")),
+                ("BOX", (2, 0), (2, -1), 1, colors.HexColor("#93C5FD")),
+                ("PADDING", (0, 0), (-1, -1), 6),
                 ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
             ]
         )
     )
     elements.append(sum_table)
     elements.append(Spacer(1, 15))
 
+    # 3. DETAILED STATEMENT TABLE
     headers = [
         "Date",
         "Manager",
-        "Outlet",
-        "Type / Note",
-        "You Gave (Rs)",
-        "You Got (Rs)",
-        "Balance (Rs)",
+        "Outlet/Customer",
+        "Details / Note",
+        "DUES (Rs)",
+        "RECEIVED (Rs)",
+        "BALANCE (Rs)",
     ]
     table_data = [[Paragraph(h, table_hdr_style) for h in headers]]
 
     for _, row in df_data.iterrows():
-        note_str = f"{row['Type']} - {row['Note']}"
+        debit_val = row['Debit (You Gave)']
+        credit_val = row['Credit (You Got)']
+        
+        # Color conditional text for values
+        debit_text = Paragraph(f"Rs {debit_val:,.2f}", red_cell_style if debit_val > 0 else table_cell_style)
+        credit_text = Paragraph(f"Rs {credit_val:,.2f}", green_cell_style if credit_val > 0 else table_cell_style)
+        balance_text = Paragraph(f"Rs {row['Balance']:,.2f}", bold_cell_style)
+
         table_data.append(
             [
                 Paragraph(str(row["Date"]), table_cell_style),
                 Paragraph(str(row["Manager Name"]), table_cell_style),
                 Paragraph(str(row["Outlet Name"]), table_cell_style),
-                Paragraph(note_str, table_cell_style),
-                Paragraph(f"{row['Debit (You Gave)']:,.2f}", table_cell_style),
-                Paragraph(f"{row['Credit (You Got)']:,.2f}", table_cell_style),
-                Paragraph(f"{row['Balance']:,.2f}", table_cell_style),
+                Paragraph(str(row["Note"]), table_cell_style),
+                debit_text,
+                credit_text,
+                balance_text,
             ]
         )
 
-    t = Table(table_data, colWidths=[65, 80, 95, 120, 55, 55, 60])
+    t = Table(table_data, colWidths=[65, 75, 100, 120, 65, 65, 55])
     t.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E293B")),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E293B")), # Dark slate header
                 ("ALIGN", (0, 0), (-1, -1), "LEFT"),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
                 (
                     "ROWBACKGROUNDS",
                     (0, 1),
@@ -303,11 +339,23 @@ def generate_pdf_report(df_data, report_title="Khatabook Statement", subtitle_in
     )
 
     elements.append(t)
+    
+    # Footer Note
+    elements.append(Spacer(1, 15))
+    footer_style = ParagraphStyle(
+        "DocFooter",
+        parent=styles["Normal"],
+        fontSize=8,
+        textColor=colors.HexColor("#64748B"),
+        alignment=1
+    )
+    elements.append(Paragraph("This is a computer-generated account statement. Thank you for your business!", footer_style))
+
     doc.build(elements)
     buffer.seek(0)
     return buffer.getvalue()
 
-# Sidebar: Backup & Manager Setup
+# Sidebar Setup
 with st.sidebar:
     st.header("⚙️ Master Settings")
 
@@ -339,13 +387,13 @@ with st.sidebar:
 st.markdown("---")
 col_left, col_right = st.columns(2)
 
-# 🔴 RED SECTION: You Gave
+# 🔴 RED SECTION: DUES Entry
 with col_left:
     st.markdown(
         """
         <div class="red-card">
-            <h3 style="color: #C9302C; margin:0;">🔴 YOU GAVE (Debit / Credit)</h3>
-            <p style="margin:0; font-size:13px; color:#555;">Record debit entry assigned by Manager to Outlet</p>
+            <h3 style="color: #C9302C; margin:0;">🔴 ADD DUES (You Gave)</h3>
+            <p style="margin:0; font-size:13px; color:#555;">Record bill / debit entry assigned to Outlet</p>
         </div>
     """,
         unsafe_allow_html=True,
@@ -366,7 +414,7 @@ with col_left:
         u_amount = st.number_input("Amount (Rs)", min_value=0.0, step=50.0, key="u_amt")
         u_note = st.text_input("Details / Bill Notes (Optional)", key="u_note")
 
-        btn_udhari = st.form_submit_button("🔴 Save Entry (You Gave)")
+        btn_udhari = st.form_submit_button("🔴 Save Dues Entry")
 
     if btn_udhari:
         if not u_outlet.strip():
@@ -385,23 +433,23 @@ with col_left:
                 "Date": formatted_date,
                 "Manager Name": u_manager,
                 "Outlet Name": final_outlet,
-                "Type": "🔴 You Gave",
+                "Type": "🔴 Dues",
                 "Debit (You Gave)": float(u_amount),
                 "Credit (You Got)": 0.0,
                 "Balance": float(new_balance),
-                "Note": u_note if u_note else "Credit Bill",
+                "Note": u_note if u_note else "Goods Bill",
             }
 
             save_entry_to_db(entry)
-            st.success(f"🔴 Added Rs {u_amount:,.2f} credit entry for {final_outlet}")
+            st.success(f"🔴 Added Rs {u_amount:,.2f} dues for {final_outlet}")
             st.rerun()
 
-# 🟢 GREEN SECTION: You Got
+# 🟢 GREEN SECTION: RECEIVED Entry
 with col_right:
     st.markdown(
         """
         <div class="green-card">
-            <h3 style="color: #4CAE4C; margin:0;">🟢 YOU GOT (Credit / Payment)</h3>
+            <h3 style="color: #4CAE4C; margin:0;">🟢 ADD RECEIVED (You Got)</h3>
             <p style="margin:0; font-size:13px; color:#555;">Record payment collected from Outlet</p>
         </div>
     """,
@@ -431,7 +479,7 @@ with col_right:
             p_amount = st.number_input("Received Amount (Rs)", min_value=0.0, step=50.0, key="p_amt")
             p_mode = st.selectbox("Payment Mode", ["Cash", "UPI / PhonePe / GPay", "Bank Transfer", "Cheque"], key="p_mode")
 
-            btn_payment = st.form_submit_button("🟢 Save Payment (You Got)")
+            btn_payment = st.form_submit_button("🟢 Save Received Entry")
 
         if btn_payment:
             if p_amount <= 0:
@@ -444,7 +492,7 @@ with col_right:
                     "Date": formatted_date,
                     "Manager Name": p_manager,
                     "Outlet Name": p_outlet,
-                    "Type": "🟢 You Got",
+                    "Type": "🟢 Received",
                     "Debit (You Gave)": 0.0,
                     "Credit (You Got)": float(p_amount),
                     "Balance": float(new_balance),
@@ -490,9 +538,9 @@ else:
     tot_due = tot_given - tot_got
 
     m1, m2, m3 = st.columns(3)
-    m1.metric("Total You Gave", f"Rs {tot_given:,.2f}")
-    m2.metric("Total You Got", f"Rs {tot_got:,.2f}")
-    m3.metric("🔴 Net Outstanding Due", f"Rs {tot_due:,.2f}")
+    m1.metric("Total Dues", f"Rs {tot_given:,.2f}")
+    m2.metric("Total Received", f"Rs {tot_got:,.2f}")
+    m3.metric("🔴 Net Balance Due", f"Rs {tot_due:,.2f}")
 
     # Outlets Dues Summary
     st.markdown("#### ⏳ Outlet Wise Dues & Pending Days")
@@ -534,9 +582,9 @@ else:
     h_col3.write("**Manager**")
     h_col4.write("**Outlet**")
     h_col5.write("**Note**")
-    h_col6.write("**You Gave**")
-    h_col7.write("**You Got**")
-    h_col8.write("**Balance**")
+    h_col6.write("**Dues (Rs)**")
+    h_col7.write("**Received (Rs)**")
+    h_col8.write("**Balance (Rs)**")
     h_col9.write("**Action**")
 
     st.divider()
@@ -559,39 +607,37 @@ else:
 
     # Export Section
     st.markdown("---")
-    st.markdown("### 📄 Export & WhatsApp Sharing Options")
+    st.markdown("### 📄 Professional Export Options")
     exp_col1, exp_col2 = st.columns(2)
 
     with exp_col1:
-        st.write("#### 📑 PDF Statement Export")
-        rep_title = f"Ledger Report - {selected_outlet_filter}"
-        rep_sub = f"Manager: {selected_mgr_filter} | Outlet: {selected_outlet_filter}"
+        st.write("#### 📑 Customer PDF Statement")
+        rep_sub = f"Outlet: {selected_outlet_filter} | Manager: {selected_mgr_filter}"
 
-        pdf_bytes = generate_pdf_report(df_view, report_title=rep_title, subtitle_info=rep_sub)
+        pdf_bytes = generate_pdf_report(df_view, subtitle_info=rep_sub)
 
         st.download_button(
-            label="📄 Download PDF Ledger Statement",
+            label="📄 Download Professional PDF Statement",
             data=pdf_bytes,
-            file_name=f"MS_Maa_Vindhyawasini_{selected_outlet_filter}_{datetime.now().strftime('%d%m%Y')}.pdf",
+            file_name=f"Statement_{selected_outlet_filter}_{datetime.now().strftime('%d%m%Y')}.pdf",
             mime="application/pdf",
         )
 
     with exp_col2:
-        st.write("#### 💬 WhatsApp Direct Statement Export")
-        wa_phone = st.text_input("Customer / Manager WhatsApp Number", placeholder="91XXXXXXXXXX")
+        st.write("#### 💬 Direct WhatsApp Statement")
+        wa_phone = st.text_input("Customer WhatsApp Number", placeholder="91XXXXXXXXXX")
 
         if st.button("📲 Generate WhatsApp Summary Link"):
             if wa_phone.strip():
-                wa_text = f"*🥤 MS MAA VINDHYAWASINI TRADERS (COCA COLA)*\n"
-                wa_text += f"*Manager:* {selected_mgr_filter}\n"
-                wa_text += f"*Outlet:* {selected_outlet_filter}\n"
+                wa_text = f"*🥤 MS MAA VINDHYAWASINI TRADERS*\n"
+                wa_text += f"*Customer Statement:* {selected_outlet_filter}\n"
                 wa_text += f"*Date:* {datetime.now().strftime('%d-%m-%Y')}\n"
                 wa_text += f"-----------------------------------\n"
-                wa_text += f"🔴 *Total Given:* Rs {tot_given:,.2f}\n"
-                wa_text += f"🟢 *Total Got:* Rs {tot_got:,.2f}\n"
-                wa_text += f"📌 *NET BALANCE DUE:* Rs {tot_due:,.2f}\n"
+                wa_text += f"🔴 *Total Dues:* Rs {tot_given:,.2f}\n"
+                wa_text += f"🟢 *Total Received:* Rs {tot_got:,.2f}\n"
+                wa_text += f"📌 *NET DUE BALANCE:* Rs {tot_due:,.2f}\n"
                 wa_text += f"-----------------------------------\n"
-                wa_text += "Please arrange the payment at the earliest. Thank you!"
+                wa_text += "Please clear the outstanding amount at the earliest. Thank you!"
 
                 encoded_text = urllib.parse.quote(wa_text)
                 wa_url = f"https://api.whatsapp.com/send?phone={wa_phone.strip()}&text={encoded_text}"
