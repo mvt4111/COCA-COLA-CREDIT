@@ -11,7 +11,6 @@ from reportlab.platypus import (
     HRFlowable,
     Paragraph,
     SimpleDocTemplate,
-    Spacer,
     Table,
     TableStyle,
 )
@@ -51,13 +50,13 @@ st.markdown(
 
 st.title("🥤 MS MAA VINDHYAWASINI TRADERS (COCA COLA)")
 st.caption(
-    "Bill-Wise Ledger System with Instant Auto Bill Codes (NAME + SERIAL NO)"
+    "Bill-Wise Ledger System - Auto Generated Bill Code (NAME + SERIAL NO)"
 )
 
 # ------------------------------------------------------------------------------
 # 1. DATABASE MANAGEMENT
 # ------------------------------------------------------------------------------
-DB_FILE = "khatabook_billwise_v5.db"
+DB_FILE = "khatabook_billwise_v6.db"
 
 
 def init_db():
@@ -134,12 +133,8 @@ def get_outlets():
   return outlets
 
 
-# NAME + SL NUMBER GENERATOR FUNCTION
-def generate_bill_code(outlet_name):
-  if not outlet_name or outlet_name.strip() == "":
-    return "BILL-1"
-
-  # नाम में से केवल अक्षर/नंबर लेना (Spaces या स्पेशल कैरेक्टर हटाकर)
+# ऑटो बिल कोड जनरेटर (बैकएंड फ़ंक्शन)
+def generate_auto_code_backend(outlet_name):
   clean_name = (
       "".join(e for e in outlet_name if e.isalnum()).upper()
       if outlet_name
@@ -148,23 +143,23 @@ def generate_bill_code(outlet_name):
   if len(clean_name) == 0:
     clean_name = "BILL"
 
-  # अगर नाम बड़ा है तो पहले 4-5 अक्षर (जैसे: RAM, RAHUL)
-  short_code = clean_name[:5]
+  short_code = clean_name[:5]  # पहले 5 अक्षर
 
   conn = sqlite3.connect(DB_FILE)
   c = conn.cursor()
-  # चेक करें कि इस नाम के कितने बिल पहले से हैं
   c.execute(
       "SELECT COUNT(*) FROM bills WHERE Outlet_Name = ?", (outlet_name.strip(),)
   )
   count = c.fetchone()[0] + 1
   conn.close()
 
-  # नाम + Serial No. (e.g., RAM-1, RAHUL-2)
   return f"{short_code}-{count}"
 
 
-def save_bill_to_db(bill_no, date_str, mgr, outlet, amount, note):
+def save_bill_to_db(date_str, mgr, outlet, amount, note):
+  # कोड अपने आप सेव होते समय जनरेट होगा
+  bill_no = generate_auto_code_backend(outlet)
+
   conn = sqlite3.connect(DB_FILE)
   c = conn.cursor()
   c.execute(
@@ -176,6 +171,7 @@ def save_bill_to_db(bill_no, date_str, mgr, outlet, amount, note):
   )
   conn.commit()
   conn.close()
+  return bill_no
 
 
 def record_bill_payment(
@@ -439,7 +435,7 @@ def generate_pdf_report(df_data, subtitle_info=""):
   return buffer.getvalue()
 
 
-# Fetch Data Fresh Every Rerun
+# Fetch Data
 managers_list = get_managers()
 outlets_list = get_outlets()
 bills_df = get_all_bills()
@@ -508,22 +504,14 @@ with col_left:
 
   if selected_b_outlet == "+ Add New Customer/Outlet":
     b_outlet = st.text_input(
-        "Enter Store Name (दुकान/ग्राहक का नाम)",
+        "Enter Store Name (दुकान का नाम)",
         placeholder="e.g. RAM TRADERS",
         key="b_outlet_text",
     )
   else:
     b_outlet = selected_b_outlet
 
-  # REAL-TIME AUTO CODE GENERATION (NAME + SL)
-  auto_generated_code = generate_bill_code(b_outlet)
-
-  b_no = st.text_input(
-      "Auto Bill Code (नाम + सीरियल नंबर)",
-      value=auto_generated_code,
-      key="b_no_input",
-      help="यह नाम और सीरियल नंबर के हिसाब से अपने आप बन रहा है।",
-  )
+  st.info("💡 Bill Code (जैसे: RAM-1, RAHUL-2) ऑटोमैटिक जेनरेट हो जाएगा।")
 
   b_amount = st.number_input(
       "Bill Amount (Rs)", min_value=0.0, step=50.0, key="b_amt"
@@ -535,17 +523,11 @@ with col_left:
       st.error("Please enter a valid Outlet Name!")
     elif b_amount <= 0:
       st.error("Please enter a valid amount greater than zero!")
-    elif (
-        not bills_df.empty
-        and b_no.strip() in bills_df["Bill_No"].astype(str).values
-    ):
-      st.error(f"Bill Code '{b_no}' already exists! System generated a new code.")
     else:
       final_outlet = b_outlet.strip().title()
       formatted_date = b_date.strftime("%d-%m-%Y")
 
-      save_bill_to_db(
-          b_no.strip(),
+      created_code = save_bill_to_db(
           formatted_date,
           b_manager,
           final_outlet,
@@ -553,7 +535,8 @@ with col_left:
           b_note if b_note else "Coca Cola Goods Bill",
       )
       st.success(
-          f"🔴 Created Bill '{b_no}' for {final_outlet} of Rs {b_amount:,.2f}"
+          f"🔴 Created Bill '{created_code}' for {final_outlet} of Rs"
+          f" {b_amount:,.2f}"
       )
       st.rerun()
 
