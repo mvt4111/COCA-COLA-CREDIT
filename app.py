@@ -51,32 +51,48 @@ st.markdown(
 
 st.title("🥤 MS MAA VINDHYAWASINI TRADERS (COCA COLA)")
 st.caption(
-    "Manage sales managers, outlets/customers, debit/credit entries, due days,"
-    " and export reports"
+    "Bill-Wise Accounting & Ledger System (Sales Managers, Outlets,"
+    " Bill Payments & Reports)"
 )
 
 # ------------------------------------------------------------------------------
-# 1. DATABASE MANAGEMENT
+# 1. DATABASE MANAGEMENT (BILL-WISE LOGIC)
 # ------------------------------------------------------------------------------
-DB_FILE = "khatabook.db"
+DB_FILE = "khatabook_billwise.db"
 
 
 def init_db():
   conn = sqlite3.connect(DB_FILE)
   c = conn.cursor()
+  # Table 1: Bills Master
   c.execute("""
-        CREATE TABLE IF NOT EXISTS ledger (
-            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+        CREATE TABLE IF NOT EXISTS bills (
+            Bill_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            Bill_No TEXT UNIQUE,
             Date TEXT,
             Manager_Name TEXT,
             Outlet_Name TEXT,
-            Type TEXT,
-            Debit REAL,
-            Credit REAL,
+            Bill_Amount REAL,
+            Paid_Amount REAL,
             Balance REAL,
+            Status TEXT,
             Note TEXT
         )
     """)
+  # Table 2: Payments History
+  c.execute("""
+        CREATE TABLE IF NOT EXISTS payments (
+            Payment_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            Date TEXT,
+            Bill_No TEXT,
+            Outlet_Name TEXT,
+            Manager_Name TEXT,
+            Amount_Paid REAL,
+            Payment_Mode TEXT,
+            FOREIGN KEY (Bill_No) REFERENCES bills(Bill_No)
+        )
+    """)
+  # Table 3: Managers Master
   c.execute("""
         CREATE TABLE IF NOT EXISTS managers (
             name TEXT PRIMARY KEY
@@ -91,11 +107,8 @@ def init_db():
 
 def refresh_state_from_db():
   conn = sqlite3.connect(DB_FILE)
-  df = pd.read_sql_query(
-      "SELECT ID, Date, Manager_Name as 'Manager Name', Outlet_Name as 'Outlet"
-      " Name', Type, Debit as 'Debit (You Gave)', Credit as 'Credit (You Got)',"
-      " Balance, Note FROM ledger ORDER BY ID ASC",
-      conn,
+  bills_df = pd.read_sql_query(
+      "SELECT * FROM bills ORDER BY Bill_ID DESC", conn
   )
   mgr_df = pd.read_sql_query("SELECT name FROM managers", conn)
   conn.close()
@@ -104,82 +117,98 @@ def refresh_state_from_db():
       mgr_df["name"].tolist() if not mgr_df.empty else ["Default Manager"]
   )
   outlets_list = (
-      sorted(list(df["Outlet Name"].dropna().unique())) if not df.empty else []
+      sorted(list(bills_df["Outlet_Name"].dropna().unique()))
+      if not bills_df.empty
+      else []
   )
 
   outlet_mgr_map = {}
-  if not df.empty:
-    for _, row in df.iterrows():
-      outlet_mgr_map[row["Outlet Name"]] = row["Manager Name"]
+  if not bills_df.empty:
+    for _, row in bills_df.iterrows():
+      outlet_mgr_map[row["Outlet_Name"]] = row["Manager_Name"]
 
-  # Status Column (Balance > 0 -> DUES, Otherwise -> PAID)
-  if not df.empty:
-    df["Status"] = df["Balance"].apply(
-        lambda b: "🔴 DUES" if b > 0 else "🟢 PAID"
-    )
-  else:
-    df["Status"] = []
-
-  st.session_state.ledger = df
+  st.session_state.bills = bills_df
   st.session_state.managers_list = managers_list
   st.session_state.outlets_list = outlets_list
   st.session_state.outlet_manager_map = outlet_mgr_map
 
 
-def save_entry_to_db(entry):
+def save_bill_to_db(bill_no, date_str, mgr, outlet, amount, note):
   conn = sqlite3.connect(DB_FILE)
   c = conn.cursor()
   c.execute(
       """
-        INSERT INTO ledger (Date, Manager_Name, Outlet_Name, Type, Debit, Credit, Balance, Note)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO bills (Bill_No, Date, Manager_Name, Outlet_Name, Bill_Amount, Paid_Amount, Balance, Status, Note)
+        VALUES (?, ?, ?, ?, ?, 0.0, ?, '🔴 UNPAID', ?)
     """,
-      (
-          entry["Date"],
-          entry["Manager Name"],
-          entry["Outlet Name"],
-          entry["Type"],
-          entry["Debit (You Gave)"],
-          entry["Credit (You Got)"],
-          entry["Balance"],
-          entry["Note"],
-      ),
+      (bill_no, date_str, mgr, outlet, amount, amount, note),
   )
   conn.commit()
   conn.close()
-  recalculate_balances_in_db()
+  refresh_state_from_db()
 
 
-def recalculate_balances_in_db():
+def record_bill_payment(
+    bill_no, date_str, outlet, mgr, paid_amt, mode, is_full
+):
   conn = sqlite3.connect(DB_FILE)
-  df = pd.read_sql_query("SELECT * FROM ledger ORDER BY ID ASC", conn)
+  c = conn.cursor()
 
-  if not df.empty:
-    c = conn.cursor()
-    for outlet in df["Outlet_Name"].unique():
-      outlet_mask = df["Outlet_Name"] == outlet
-      running_bal = 0.0
+  # Fetch current bill
+  c.execute(
+      "SELECT Bill_Amount, Paid_Amount, Balance FROM bills WHERE Bill_No = ?",
+      (bill_no,),
+  )
+  row = c.fetchone()
+  if row:
+    bill_amt, curr_paid, curr_bal = row
 
-      for idx in df[outlet_mask].index:
-        debit = float(df.at[idx, "Debit"])
-        credit = float(df.at[idx, "Credit"])
-        running_bal += debit - credit
-        row_id = int(df.at[idx, "ID"])
-        c.execute(
-            "UPDATE ledger SET Balance = ? WHERE ID = ?", (running_bal, row_id)
-        )
+    if is_full:
+      actual_payment = curr_bal
+    else:
+      actual_payment = min(paid_amt, curr_bal)
+
+    new_paid = curr_paid + actual_payment
+    new_bal = bill_amt - new_paid
+
+    if new_bal <= 0:
+      new_status = "🟢 PAID"
+      new_bal = 0.0
+    else:
+      new_status = "🔴 PARTIAL"
+
+    # Update Bill Record
+    c.execute(
+        """
+            UPDATE bills 
+            SET Paid_Amount = ?, Balance = ?, Status = ? 
+            WHERE Bill_No = ?
+        """,
+        (new_paid, new_bal, new_status, bill_no),
+    )
+
+    # Insert Payment Record
+    c.execute(
+        """
+            INSERT INTO payments (Date, Bill_No, Outlet_Name, Manager_Name, Amount_Paid, Payment_Mode)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (date_str, bill_no, outlet, mgr, actual_payment, mode),
+    )
+
     conn.commit()
   conn.close()
   refresh_state_from_db()
 
 
-def delete_entry_from_db(entry_id):
+def delete_bill_from_db(bill_no):
   conn = sqlite3.connect(DB_FILE)
   c = conn.cursor()
-  c.execute("DELETE FROM ledger WHERE ID = ?", (entry_id,))
+  c.execute("DELETE FROM bills WHERE Bill_No = ?", (bill_no,))
+  c.execute("DELETE FROM payments WHERE Bill_No = ?", (bill_no,))
   conn.commit()
   conn.close()
-  recalculate_balances_in_db()
+  refresh_state_from_db()
 
 
 def save_manager_to_db(mgr_str):
@@ -197,7 +226,7 @@ def save_manager_to_db(mgr_str):
 
 # Initialize DB
 init_db()
-if "ledger" not in st.session_state:
+if "bills" not in st.session_state:
   refresh_state_from_db()
 
 
@@ -205,7 +234,7 @@ if "ledger" not in st.session_state:
 # 2. PDF GENERATION FUNCTION
 # ------------------------------------------------------------------------------
 def generate_pdf_report(
-    df_data, report_title="CUSTOMER ACCOUNT STATEMENT", subtitle_info=""
+    df_data, report_title="CUSTOMER BILL STATEMENT", subtitle_info=""
 ):
   buffer = io.BytesIO()
   doc = SimpleDocTemplate(
@@ -275,9 +304,6 @@ def generate_pdf_report(
       textColor=colors.HexColor("#16A34A"),
       fontName="Helvetica-Bold",
   )
-  bold_cell_style = ParagraphStyle(
-      "BoldCell", parent=table_cell_style, fontName="Helvetica-Bold"
-  )
 
   elements.append(Paragraph("🥤 MS MAA VINDHYAWASINI TRADERS", title_style))
   elements.append(
@@ -300,139 +326,34 @@ def generate_pdf_report(
       )
   )
 
-  total_given = df_data["Debit (You Gave)"].sum()
-  total_got = df_data["Credit (You Got)"].sum()
-  total_due = total_given - total_got
-
-  summary_data = [
-      [
-          Paragraph(
-              "TOTAL DUES",
-              ParagraphStyle(
-                  "H1",
-                  parent=table_cell_style,
-                  fontName="Helvetica-Bold",
-                  textColor=colors.HexColor("#991B1B"),
-                  alignment=1,
-              ),
-          ),
-          Paragraph(
-              "TOTAL RECEIVED",
-              ParagraphStyle(
-                  "H2",
-                  parent=table_cell_style,
-                  fontName="Helvetica-Bold",
-                  textColor=colors.HexColor("#166534"),
-                  alignment=1,
-              ),
-          ),
-          Paragraph(
-              "NET BALANCE DUE",
-              ParagraphStyle(
-                  "H3",
-                  parent=table_cell_style,
-                  fontName="Helvetica-Bold",
-                  textColor=colors.HexColor("#1E3A8A"),
-                  alignment=1,
-              ),
-          ),
-      ],
-      [
-          Paragraph(
-              f"Rs {total_given:,.2f}",
-              ParagraphStyle(
-                  "V1",
-                  parent=table_cell_style,
-                  fontName="Helvetica-Bold",
-                  fontSize=11,
-                  textColor=colors.HexColor("#DC2626"),
-                  alignment=1,
-              ),
-          ),
-          Paragraph(
-              f"Rs {total_got:,.2f}",
-              ParagraphStyle(
-                  "V2",
-                  parent=table_cell_style,
-                  fontName="Helvetica-Bold",
-                  fontSize=11,
-                  textColor=colors.HexColor("#16A34A"),
-                  alignment=1,
-              ),
-          ),
-          Paragraph(
-              f"Rs {total_due:,.2f}",
-              ParagraphStyle(
-                  "V3",
-                  parent=table_cell_style,
-                  fontName="Helvetica-Bold",
-                  fontSize=11,
-                  textColor=colors.HexColor("#1D4ED8"),
-                  alignment=1,
-              ),
-          ),
-      ],
-  ]
-
-  sum_table = Table(summary_data, colWidths=[180, 180, 185])
-  sum_table.setStyle(
-      TableStyle([
-          ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#FEF2F2")),
-          ("BACKGROUND", (1, 0), (1, -1), colors.HexColor("#F0FDF4")),
-          ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#EFF6FF")),
-          ("BOX", (0, 0), (0, -1), 1, colors.HexColor("#FCA5A5")),
-          ("BOX", (1, 0), (1, -1), 1, colors.HexColor("#86EFAC")),
-          ("BOX", (2, 0), (2, -1), 1, colors.HexColor("#93C5FD")),
-          ("PADDING", (0, 0), (-1, -1), 6),
-          ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-          ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-      ])
-  )
-  elements.append(sum_table)
-  elements.append(Spacer(1, 12))
-
   headers = [
+      "Bill No",
       "Date",
-      "Manager",
       "Outlet/Customer",
-      "Note",
-      "DUES (Rs)",
-      "RECEIVED (Rs)",
-      "BALANCE (Rs)",
-      "STATUS",
+      "Bill Amt (Rs)",
+      "Paid Amt (Rs)",
+      "Balance (Rs)",
+      "Status",
   ]
   table_data = [[Paragraph(h, table_hdr_style) for h in headers]]
 
   for _, row in df_data.iterrows():
-    debit_val = row["Debit (You Gave)"]
-    credit_val = row["Credit (You Got)"]
-
-    debit_text = Paragraph(
-        f"Rs {debit_val:,.2f}",
-        red_cell_style if debit_val > 0 else table_cell_style,
-    )
-    credit_text = Paragraph(
-        f"Rs {credit_val:,.2f}",
-        green_cell_style if credit_val > 0 else table_cell_style,
-    )
-    balance_text = Paragraph(f"Rs {row['Balance']:,.2f}", bold_cell_style)
     status_text = Paragraph(
         row["Status"],
-        red_cell_style if "DUES" in row["Status"] else green_cell_style,
+        green_cell_style if "PAID" in row["Status"] else red_cell_style,
     )
 
     table_data.append([
+        Paragraph(str(row["Bill_No"]), table_cell_style),
         Paragraph(str(row["Date"]), table_cell_style),
-        Paragraph(str(row["Manager Name"]), table_cell_style),
-        Paragraph(str(row["Outlet Name"]), table_cell_style),
-        Paragraph(str(row["Note"]), table_cell_style),
-        debit_text,
-        credit_text,
-        balance_text,
+        Paragraph(str(row["Outlet_Name"]), table_cell_style),
+        Paragraph(f"Rs {row['Bill_Amount']:,.2f}", table_cell_style),
+        Paragraph(f"Rs {row['Paid_Amount']:,.2f}", green_cell_style),
+        Paragraph(f"Rs {row['Balance']:,.2f}", red_cell_style),
         status_text,
     ])
 
-  t = Table(table_data, colWidths=[60, 65, 95, 105, 60, 60, 55, 45])
+  t = Table(table_data, colWidths=[70, 65, 120, 75, 75, 75, 65])
   t.setStyle(
       TableStyle([
           ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E293B")),
@@ -449,22 +370,6 @@ def generate_pdf_report(
       ])
   )
   elements.append(t)
-
-  elements.append(Spacer(1, 12))
-  footer_style = ParagraphStyle(
-      "DocFooter",
-      parent=styles["Normal"],
-      fontSize=8,
-      textColor=colors.HexColor("#64748B"),
-      alignment=1,
-  )
-  elements.append(
-      Paragraph(
-          "This is a computer-generated account statement. Thank you for your"
-          " business!",
-          footer_style,
-      )
-  )
 
   doc.build(elements)
   buffer.seek(0)
@@ -490,220 +395,211 @@ with st.sidebar:
     st.write(", ".join(st.session_state.managers_list))
 
   with st.expander("💾 Backup CSV"):
-    if not st.session_state.ledger.empty:
-      csv_buf = st.session_state.ledger.to_csv(index=False).encode("utf-8")
+    if not st.session_state.bills.empty:
+      csv_buf = st.session_state.bills.to_csv(index=False).encode("utf-8")
       st.download_button(
-          label="📥 Download CSV Backup",
+          label="📥 Download Bills CSV Backup",
           data=csv_buf,
           file_name=(
-              "maa_vindhyawasini_khatabook_"
+              "maa_vindhyawasini_bills_"
               f"{datetime.now().strftime('%d-%m-%Y')}.csv"
           ),
           mime="text/csv",
       )
 
 # ------------------------------------------------------------------------------
-# 4. TRANSACTIONS ENTRY SECTION
+# 4. TRANSACTIONS ENTRY SECTION (BILL-WISE)
 # ------------------------------------------------------------------------------
 st.markdown("---")
 col_left, col_right = st.columns(2)
 
-# DUES ENTRY
+# DUES ENTRY (NEW BILL GENERATION)
 with col_left:
   st.markdown(
       """
         <div class="red-card">
-            <h3 style="color: #C9302C; margin:0;">🔴 ADD DUES (You Gave)</h3>
-            <p style="margin:0; font-size:13px; color:#555;">Record bill / debit entry assigned to Outlet</p>
+            <h3 style="color: #C9302C; margin:0;">🔴 CREATE NEW BILL / DUES</h3>
+            <p style="margin:0; font-size:13px; color:#555;">Record new bill entry against Outlet</p>
         </div>
     """,
       unsafe_allow_html=True,
   )
 
-  with st.form(key="udhari_form", clear_on_submit=True):
-    u_date = st.date_input(
-        "Date", datetime.now(), format="DD/MM/YYYY", key="u_date_key"
+  with st.form(key="new_bill_form", clear_on_submit=True):
+    b_date = st.date_input(
+        "Bill Date", datetime.now(), format="DD/MM/YYYY", key="b_date_key"
     )
-    u_manager = st.selectbox(
+
+    # Auto Bill Number Generator Suggestion
+    auto_bill_no = f"INV-{datetime.now().strftime('%d%m%Y')}-{len(st.session_state.bills) + 1}"
+    b_no = st.text_input("Bill / Invoice Number", value=auto_bill_no)
+
+    b_manager = st.selectbox(
         "Select Sales Manager",
         st.session_state.managers_list,
-        key="u_mgr_select",
+        key="b_mgr_select",
     )
 
     existing_outlets = [
         "+ Add New Customer/Outlet"
     ] + st.session_state.outlets_list
-    selected_u_outlet = st.selectbox(
-        "Customer / Outlet Name", existing_outlets, key="u_outlet_select"
+    selected_b_outlet = st.selectbox(
+        "Customer / Outlet Name", existing_outlets, key="b_outlet_select"
     )
 
-    if selected_u_outlet == "+ Add New Customer/Outlet":
-      u_outlet = st.text_input("Enter New Store Name", key="u_outlet_text")
+    if selected_b_outlet == "+ Add New Customer/Outlet":
+      b_outlet = st.text_input("Enter New Store Name", key="b_outlet_text")
     else:
-      u_outlet = selected_u_outlet
+      b_outlet = selected_b_outlet
 
-    u_amount = st.number_input(
-        "Amount (Rs)", min_value=0.0, step=50.0, key="u_amt"
+    b_amount = st.number_input(
+        "Bill Amount (Rs)", min_value=0.0, step=50.0, key="b_amt"
     )
-    u_note = st.text_input("Details / Bill Notes (Optional)", key="u_note")
+    b_note = st.text_input("Bill Details / Goods Note (Optional)", key="b_note")
 
-    btn_udhari = st.form_submit_button("🔴 Save Dues Entry")
+    btn_create_bill = st.form_submit_button("🔴 Save Bill Entry")
 
-  if btn_udhari:
-    if not u_outlet.strip():
+  if btn_create_bill:
+    if not b_outlet.strip():
       st.error("Please enter a valid Outlet Name!")
-    elif u_amount <= 0:
+    elif b_amount <= 0:
       st.error("Please enter a valid amount greater than zero!")
+    elif b_no.strip() in st.session_state.bills["Bill_No"].values:
+      st.error(f"Bill No. '{b_no}' already exists! Use a unique Bill No.")
     else:
-      final_outlet = u_outlet.strip().title()
-      formatted_date = u_date.strftime("%d-%m-%Y")
+      final_outlet = b_outlet.strip().title()
+      formatted_date = b_date.strftime("%d-%m-%Y")
 
-      outlet_df = st.session_state.ledger[
-          st.session_state.ledger["Outlet Name"] == final_outlet
-      ]
-      prev_balance = (
-          outlet_df["Balance"].iloc[-1] if not outlet_df.empty else 0.0
+      save_bill_to_db(
+          b_no.strip(),
+          formatted_date,
+          b_manager,
+          final_outlet,
+          float(b_amount),
+          b_note if b_note else "Coca Cola Goods Bill",
       )
-      new_balance = prev_balance + u_amount
-
-      entry = {
-          "Date": formatted_date,
-          "Manager Name": u_manager,
-          "Outlet Name": final_outlet,
-          "Type": "🔴 Dues",
-          "Debit (You Gave)": float(u_amount),
-          "Credit (You Got)": 0.0,
-          "Balance": float(new_balance),
-          "Note": u_note if u_note else "Goods Bill",
-      }
-
-      save_entry_to_db(entry)
-      st.success(f"🔴 Added Rs {u_amount:,.2f} dues for {final_outlet}")
+      st.success(
+          f"🔴 Created Bill '{b_no}' for {final_outlet} of Rs {b_amount:,.2f}"
+      )
       st.rerun()
 
-# RECEIVED ENTRY (WITH FULL / PART PAYMENT OPTION)
+# RECEIVED ENTRY (BILL-WISE PAYMENT)
 with col_right:
   st.markdown(
       """
         <div class="green-card">
-            <h3 style="color: #4CAE4C; margin:0;">🟢 ADD RECEIVED (You Got)</h3>
-            <p style="margin:0; font-size:13px; color:#555;">Record Full or Part payment collected</p>
+            <h3 style="color: #4CAE4C; margin:0;">🟢 BILL-WISE PAYMENT RECEIVED</h3>
+            <p style="margin:0; font-size:13px; color:#555;">Clear Full or Partial Payment against specific Bill</p>
         </div>
     """,
       unsafe_allow_html=True,
   )
 
   if not st.session_state.outlets_list:
-    st.info("No outlets available. Please add an entry on the left first.")
+    st.info("No active outlets found. Create a bill on the left first.")
   else:
-    p_date = st.date_input(
-        "Date", datetime.now(), format="DD/MM/YYYY", key="p_date_key"
-    )
     p_outlet = st.selectbox(
         "Select Customer / Outlet",
         st.session_state.outlets_list,
         key="p_outlet_select",
     )
 
-    default_mgr = st.session_state.outlet_manager_map.get(
-        p_outlet, st.session_state.managers_list[0]
+    # Filter Unpaid / Partial Bills for this Outlet
+    conn = sqlite3.connect(DB_FILE)
+    unpaid_bills_df = pd.read_sql_query(
+        "SELECT * FROM bills WHERE Outlet_Name = ? AND Balance > 0 ORDER BY"
+        " Bill_ID ASC",
+        conn,
+        params=(p_outlet,),
     )
-    p_manager = st.selectbox(
-        "Sales Manager",
-        st.session_state.managers_list,
-        index=(
-            st.session_state.managers_list.index(default_mgr)
-            if default_mgr in st.session_state.managers_list
-            else 0
-        ),
-        key="p_mgr_select",
-    )
+    conn.close()
 
-    p_outlet_df = st.session_state.ledger[
-        st.session_state.ledger["Outlet Name"] == p_outlet
-    ]
-    current_due = (
-        p_outlet_df["Balance"].iloc[-1] if not p_outlet_df.empty else 0.0
-    )
-
-    st.info(f"👉 **Current Total Due for {p_outlet}:** Rs {current_due:,.2f}")
-
-    # NEW: Option to choose FULL or PART PAYMENT
-    pay_type = st.radio(
-        "Payment Type (भुगतान का प्रकार):",
-        ["Full Payment (पूरा भुगतान)", "Part Payment (आंशिक/किश्त)"],
-        horizontal=True,
-    )
-
-    if pay_type == "Full Payment (पूरा भुगतान)":
-      p_amount = current_due
-      st.success(f"✅ Full Amount Selected: **Rs {p_amount:,.2f}**")
+    if unpaid_bills_df.empty:
+      st.success(f"🎉 No outstanding unpaid bills for {p_outlet}!")
     else:
-      p_amount = st.number_input(
-          "Enter Part Amount Received (Rs)",
-          min_value=0.0,
-          max_value=float(current_due) if current_due > 0 else 1000000.0,
-          step=50.0,
-          key="p_amt_part",
+      # Prepare Bill Selection List
+      bill_options = {}
+      for _, row in unpaid_bills_df.iterrows():
+        label = f"Bill: {row['Bill_No']} (Date: {row['Date']}) -> Pending Due: Rs {row['Balance']:,.2f}"
+        bill_options[label] = row
+
+      selected_bill_label = st.selectbox(
+          "Select Pending Bill to Pay:", list(bill_options.keys())
+      )
+      selected_bill = bill_options[selected_bill_label]
+
+      p_date = st.date_input(
+          "Payment Date",
+          datetime.now(),
+          format="DD/MM/YYYY",
+          key="p_date_key",
       )
 
-    p_mode = st.selectbox(
-        "Payment Mode",
-        ["Cash", "UPI / PhonePe / GPay", "Bank Transfer", "Cheque"],
-        key="p_mode",
-    )
+      # Payment Type Option
+      pay_type = st.radio(
+          "Payment Type (भुगतान का प्रकार):",
+          ["Full Bill Payment (पूरा बिल चुकता)", "Part Payment (आंशिक/किश्त)"],
+          horizontal=True,
+      )
 
-    if st.button("🟢 Save Received Entry", use_container_width=True):
-      if p_amount <= 0:
-        st.error("Please enter a valid amount greater than zero!")
+      if pay_type == "Full Bill Payment (पूरा बिल चुकता)":
+        p_amount = selected_bill["Balance"]
+        st.success(
+            f"✅ Full Bill Amount Selected: **Rs {p_amount:,.2f}** (Bill"
+            " will become 🟢 PAID)"
+        )
       else:
-        formatted_date = p_date.strftime("%d-%m-%Y")
-        new_balance = current_due - p_amount
-
-        note_label = (
-            f"Full Payment ({p_mode})"
-            if pay_type == "Full Payment (पूरा भुगतान)"
-            else f"Part Payment ({p_mode})"
+        p_amount = st.number_input(
+            "Enter Part Payment Amount (Rs)",
+            min_value=0.0,
+            max_value=float(selected_bill["Balance"]),
+            step=50.0,
+            key="p_amt_part",
         )
 
-        entry = {
-            "Date": formatted_date,
-            "Manager Name": p_manager,
-            "Outlet Name": p_outlet,
-            "Type": "🟢 Received",
-            "Debit (You Gave)": 0.0,
-            "Credit (You Got)": float(p_amount),
-            "Balance": float(new_balance),
-            "Note": note_label,
-        }
+      p_mode = st.selectbox(
+          "Payment Mode",
+          ["Cash", "UPI / PhonePe / GPay", "Bank Transfer", "Cheque"],
+          key="p_mode",
+      )
 
-        save_entry_to_db(entry)
-        if new_balance <= 0:
-          st.success(
-              f"🎉 Full Payment Received from {p_outlet}! Account Balance is"
-              " now 🟢 PAID."
-          )
+      if st.button("🟢 Receive Payment for Selected Bill", use_container_width=True):
+        if p_amount <= 0:
+          st.error("Please enter a valid amount greater than zero!")
         else:
-          st.success(
-              f"🟢 Received Part Payment Rs {p_amount:,.2f} from {p_outlet}."
-              f" Remaining Due: Rs {new_balance:,.2f}"
+          formatted_date = p_date.strftime("%d-%m-%Y")
+          is_full_flag = pay_type == "Full Bill Payment (पूरा बिल चुकता)"
+
+          record_bill_payment(
+              selected_bill["Bill_No"],
+              formatted_date,
+              p_outlet,
+              selected_bill["Manager_Name"],
+              float(p_amount),
+              p_mode,
+              is_full_flag,
           )
-        st.rerun()
+
+          st.success(
+              f"🟢 Received Payment of Rs {p_amount:,.2f} against Bill"
+              f" #{selected_bill['Bill_No']}"
+          )
+          st.rerun()
 
 # ------------------------------------------------------------------------------
 # 5. DASHBOARD & DISPLAY SECTION
 # ------------------------------------------------------------------------------
 st.markdown("---")
-st.subheader("📊 Ledger Dashboard & Dues Days Summary")
+st.subheader("📊 Bills Ledger Dashboard")
 
-if st.session_state.ledger.empty:
-  st.info("No ledger records available to display.")
+if st.session_state.bills.empty:
+  st.info("No bills recorded yet.")
 else:
   f_col1, f_col2 = st.columns(2)
 
   with f_col1:
     selected_mgr_filter = st.selectbox(
-        "Filter by Manager:",
+        "Filter by Sales Manager:",
         options=["All Managers"] + st.session_state.managers_list,
     )
 
@@ -711,9 +607,9 @@ else:
     filtered_outlets = ["All Outlets"] + st.session_state.outlets_list
   else:
     mgr_outlets = list(
-        st.session_state.ledger[
-            st.session_state.ledger["Manager Name"] == selected_mgr_filter
-        ]["Outlet Name"].unique()
+        st.session_state.bills[
+            st.session_state.bills["Manager_Name"] == selected_mgr_filter
+        ]["Outlet_Name"].unique()
     )
     filtered_outlets = ["All Outlets"] + sorted(mgr_outlets)
 
@@ -722,79 +618,38 @@ else:
         "Filter by Outlet / Customer:", options=filtered_outlets
     )
 
-  df_view = st.session_state.ledger.copy()
+  df_view = st.session_state.bills.copy()
   if selected_mgr_filter != "All Managers":
-    df_view = df_view[df_view["Manager Name"] == selected_mgr_filter]
+    df_view = df_view[df_view["Manager_Name"] == selected_mgr_filter]
 
   if selected_outlet_filter != "All Outlets":
-    df_view = df_view[df_view["Outlet Name"] == selected_outlet_filter]
+    df_view = df_view[df_view["Outlet_Name"] == selected_outlet_filter]
 
-  tot_given = df_view["Debit (You Gave)"].sum()
-  tot_got = df_view["Credit (You Got)"].sum()
-  tot_due = tot_given - tot_got
+  tot_bill = df_view["Bill_Amount"].sum()
+  tot_paid = df_view["Paid_Amount"].sum()
+  tot_due = df_view["Balance"].sum()
 
   m1, m2, m3 = st.columns(3)
-  m1.metric("Total Dues", f"Rs {tot_given:,.2f}")
-  m2.metric("Total Received", f"Rs {tot_got:,.2f}")
-  m3.metric("🔴 Net Balance Due", f"Rs {tot_due:,.2f}")
+  m1.metric("Total Billed Amount", f"Rs {tot_bill:,.2f}")
+  m2.metric("Total Paid Received", f"Rs {tot_paid:,.2f}")
+  m3.metric("🔴 Total Net Dues Balance", f"Rs {tot_due:,.2f}")
 
-  # Outlet Pending Days Summary
-  st.markdown("#### ⏳ Outlet Wise Dues & Pending Days")
-  dues_data = []
-
-  for outlet_name in st.session_state.outlets_list:
-    o_df = st.session_state.ledger[
-        st.session_state.ledger["Outlet Name"] == outlet_name
-    ]
-    if not o_df.empty:
-      bal = o_df["Balance"].iloc[-1]
-      if bal > 0:
-        last_debit_entries = o_df[o_df["Debit (You Gave)"] > 0]
-        if not last_debit_entries.empty:
-          date_series = pd.to_datetime(
-              last_debit_entries["Date"], format="%d-%m-%Y"
-          )
-          last_date = date_series.max()
-          last_date_str = last_date.strftime("%d-%m-%Y")
-          days_pending = (datetime.now() - last_date).days
-        else:
-          last_date_str = "N/A"
-          days_pending = 0
-
-        mgr_assigned = o_df["Manager Name"].iloc[-1]
-        dues_data.append({
-            "Outlet Name": outlet_name,
-            "Manager": mgr_assigned,
-            "Outstanding Due (Rs)": f"Rs {bal:,.2f}",
-            "Last Bill Date": last_date_str,
-            "Dues Pending Days": f"⏰ {days_pending} Days",
-            "Status": "🔴 DUES",
-        })
-
-  if dues_data:
-    st.dataframe(
-        pd.DataFrame(dues_data), use_container_width=True, hide_index=True
-    )
-  else:
-    st.success("🎉 No active outstanding dues for any outlet!")
-
-  # Detailed Transactions Table
-  st.markdown("#### 📋 Detailed Transactions")
+  # Detailed Bills Table Display
+  st.markdown("#### 📋 Detailed Bill Records")
 
   # Table Header
-  h_col1, h_col2, h_col3, h_col4, h_col5, h_col6, h_col7, h_col8, h_col9, h_col10 = (
-      st.columns([0.8, 1.1, 1.3, 1.4, 1.8, 1.3, 1.3, 1.3, 1.1, 0.8])
+  h_col1, h_col2, h_col3, h_col4, h_col5, h_col6, h_col7, h_col8, h_col9 = (
+      st.columns([1.2, 1.0, 1.4, 1.2, 1.1, 1.1, 1.1, 1.1, 0.8])
   )
-  h_col1.write("**ID**")
+  h_col1.write("**Bill No.**")
   h_col2.write("**Date**")
-  h_col3.write("**Manager**")
-  h_col4.write("**Outlet**")
-  h_col5.write("**Note**")
-  h_col6.write("**Dues (Rs)**")
-  h_col7.write("**Received (Rs)**")
-  h_col8.write("**Balance (Rs)**")
-  h_col9.write("**Status**")
-  h_col10.write("**Action**")
+  h_col3.write("**Outlet**")
+  h_col4.write("**Manager**")
+  h_col5.write("**Bill Amt**")
+  h_col6.write("**Paid Amt**")
+  h_col7.write("**Balance**")
+  h_col8.write("**Status**")
+  h_col9.write("**Action**")
 
   st.divider()
 
@@ -802,27 +657,28 @@ else:
     is_paid = row["Balance"] <= 0
 
     with st.container():
-      c1, c2, c3, c4, c5, c6, c7, c8, c9, c10 = st.columns(
-          [0.8, 1.1, 1.3, 1.4, 1.8, 1.3, 1.3, 1.3, 1.1, 0.8]
+      c1, c2, c3, c4, c5, c6, c7, c8, c9 = st.columns(
+          [1.2, 1.0, 1.4, 1.2, 1.1, 1.1, 1.1, 1.1, 0.8]
       )
 
-      c1.write(f"#{row['ID']}")
+      c1.write(f"**{row['Bill_No']}**")
       c2.write(row["Date"])
-      c3.write(row["Manager Name"])
-      c4.write(row["Outlet Name"])
-      c5.write(row["Note"])
-      c6.write(f"Rs {row['Debit (You Gave)']:,.2f}")
-      c7.write(f"Rs {row['Credit (You Got)']:,.2f}")
-      c8.write(f"Rs {row['Balance']:,.2f}")
+      c3.write(row["Outlet_Name"])
+      c4.write(row["Manager_Name"])
+      c5.write(f"Rs {row['Bill_Amount']:,.2f}")
+      c6.write(f"Rs {row['Paid_Amount']:,.2f}")
+      c7.write(f"Rs {row['Balance']:,.2f}")
 
-      if is_paid:
-        c9.markdown("**🟢 PAID**")
+      if row["Status"] == "🟢 PAID":
+        c8.markdown("**🟢 PAID**")
+      elif row["Status"] == "🔴 PARTIAL":
+        c8.markdown("**🔴 PARTIAL**")
       else:
-        c9.markdown("**🔴 DUES**")
+        c8.markdown("**🔴 UNPAID**")
 
-      if c10.button("🗑️", key=f"del_{row['ID']}"):
-        delete_entry_from_db(row["ID"])
-        st.success(f"Entry #{row['ID']} deleted!")
+      if c9.button("🗑️", key=f"del_{row['Bill_No']}"):
+        delete_bill_from_db(row["Bill_No"])
+        st.success(f"Bill #{row['Bill_No']} deleted!")
         st.rerun()
 
   # Export Section
@@ -842,7 +698,7 @@ else:
         label="📄 Download Professional PDF Statement",
         data=pdf_bytes,
         file_name=(
-            f"Statement_{selected_outlet_filter}_"
+            f"Bill_Statement_{selected_outlet_filter}_"
             f"{datetime.now().strftime('%d%m%Y')}.pdf"
         ),
         mime="application/pdf",
@@ -860,15 +716,16 @@ else:
         wa_text += f"*Customer Statement:* {selected_outlet_filter}\n"
         wa_text += f"*Date:* {datetime.now().strftime('%d-%m-%Y')}\n"
         wa_text += "-----------------------------------\n"
-        wa_text += f"🔴 *Total Dues:* Rs {tot_given:,.2f}\n"
-        wa_text += f"🟢 *Total Received:* Rs {tot_got:,.2f}\n"
-        wa_text += f"📌 *NET DUE BALANCE:* Rs {tot_due:,.2f}\n"
+        wa_text += f"🔴 *Total Billed:* Rs {tot_bill:,.2f}\n"
+        wa_text += f"🟢 *Total Paid:* Rs {tot_paid:,.2f}\n"
+        wa_text += f"📌 *NET BALANCE DUE:* Rs {tot_due:,.2f}\n"
         wa_text += (
             f"STATUS: {'🟢 FULLY PAID' if tot_due <= 0 else '🔴 PENDING DUES'}\n"
         )
         wa_text += "-----------------------------------\n"
         wa_text += (
-            "Please clear the outstanding amount at the earliest. Thank you!"
+            "Please clear the outstanding bill amounts at the earliest. Thank"
+            " you!"
         )
 
         encoded_text = urllib.parse.quote(wa_text)
