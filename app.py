@@ -23,7 +23,7 @@ st.sidebar.header("➕ नई एंट्री दर्ज करें (New 
 entry_date = st.sidebar.date_input("Entry Date (तारीख)", datetime.now())
 outlet_name = st.sidebar.text_input("Outlet Name (दुकान का नाम)")
 category = st.sidebar.selectbox("Category", ["Kirana Store", "Supermarket", "Hotel/Restaurant", "Pan Shop / Kiosk"])
-manager = st.sidebar.selectbox("Assigned Manager", ["Ramesh Kumar", "Suresh Verma", "Amit Singh", "Rajesh Sharma"])
+manager = st.sidebar.selectbox("Assigned Manager", ["PIYUSH YADAV", "RUKSHAT ALAM", "SUMIT MGR", "PRAKASH MGR"])
 trans_type = st.sidebar.radio("Transaction Type", ["Udhari (Debit)", "Payment Received (Credit)"])
 amount = st.sidebar.number_input("Amount (₹)", min_value=0.0, step=100.0)
 
