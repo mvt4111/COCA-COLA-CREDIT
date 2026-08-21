@@ -41,11 +41,11 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("📕 डिजिटल खाताबुक (Khatabook App)")
-st.caption("ग्राहकों और आउटलेट्स का उधारी व पेमेंट हिसाब-किताब")
+st.title("📕 Digital Khatabook App")
+st.caption("Manage customer credit ledgers, entries, and payment collection")
 
 # ------------------------------------------------------------------------------
-# 1. STATE MANAGEMENT (Auto Outlet/Customer Saving)
+# 1. STATE MANAGEMENT (Auto Customer/Outlet Saving)
 # ------------------------------------------------------------------------------
 if "ledger" not in st.session_state:
     st.session_state.ledger = pd.DataFrame(
@@ -73,42 +73,42 @@ def save_outlet_name(name_str: str) -> str:
     return clean_name
 
 
-# Sidebar Data Backup
-with st.sidebar.expander("💾 बैकअप और डेटा रीस्टोर"):
-    uploaded_file = st.file_uploader("CSV फ़ाइल अपलोड करें", type=["csv"])
+# Sidebar: Data Backup & Restore
+with st.sidebar.expander("💾 Data Backup & Restore"):
+    uploaded_file = st.file_uploader("Upload Backup CSV", type=["csv"])
     if uploaded_file is not None:
         try:
             st.session_state.ledger = pd.read_csv(uploaded_file)
             st.session_state.outlets_list = sorted(
                 list(st.session_state.ledger["Outlet Name"].dropna().unique())
             )
-            st.success("डेटा सफलतापूर्वक लोड हो गया!")
+            st.success("Ledger data loaded successfully!")
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"Error loading file: {e}")
 
     if not st.session_state.ledger.empty:
         csv_buffer = st.session_state.ledger.to_csv(index=False).encode("utf-8")
         st.download_button(
-            label="📥 डाउनलोड खाताबुक डेटा (CSV)",
+            label="📥 Download Data Backup (CSV)",
             data=csv_buffer,
             file_name=f"khatabook_backup_{datetime.now().strftime('%d-%m-%Y')}.csv",
             mime="text/csv",
         )
 
 # ------------------------------------------------------------------------------
-# 2. KHATABOOK STYLE ENTRY SECTION (Red / Green Cards)
+# 2. KHATABOOK ENTRY SECTION (Red / Green Cards)
 # ------------------------------------------------------------------------------
 st.markdown("---")
 
 col_left, col_right = st.columns(2)
 
-# 🔴 RED SECTION: Aapne Diya (Udhari / Debit)
+# 🔴 RED SECTION: You Gave (Debit / Credit Given)
 with col_left:
     st.markdown(
         """
         <div class="red-card">
-            <h3 style="color: #C9302C; margin:0;">🔴 आपने दिया (You Gave / उधारी)</h3>
-            <p style="margin:0; font-size:13px; color:#555;">जब ग्राहक को सामान या उधारी दें</p>
+            <h3 style="color: #C9302C; margin:0;">🔴 YOU GAVE (Debit / Udhari)</h3>
+            <p style="margin:0; font-size:13px; color:#555;">Record when you give goods or credit to a customer</p>
         </div>
     """,
         unsafe_allow_html=True,
@@ -116,37 +116,35 @@ with col_left:
 
     with st.form(key="udhari_form", clear_on_submit=True):
         u_date = st.date_input(
-            "तारीख (Date)", datetime.now(), format="DD/MM/YYYY", key="u_date_key"
+            "Date", datetime.now(), format="DD/MM/YYYY", key="u_date_key"
         )
 
         existing_outlets = [
-            "+ नया ग्राहक/आउटलेट जोड़ें"
+            "+ Add New Customer/Outlet"
         ] + st.session_state.outlets_list
         selected_u_outlet = st.selectbox(
-            "ग्राहक / आउटलेट का नाम", existing_outlets, key="u_outlet_select"
+            "Customer / Outlet Name", existing_outlets, key="u_outlet_select"
         )
 
-        if selected_u_outlet == "+ नया ग्राहक/आउटलेट जोड़ें":
+        if selected_u_outlet == "+ Add New Customer/Outlet":
             u_outlet = st.text_input(
-                "नए ग्राहक/दुकान का नाम लिखें", key="u_outlet_text"
+                "Enter New Customer/Store Name", key="u_outlet_text"
             )
         else:
             u_outlet = selected_u_outlet
 
         u_amount = st.number_input(
-            "राशि (Amount ₹)", min_value=0.0, step=50.0, key="u_amt"
+            "Amount (₹)", min_value=0.0, step=50.0, key="u_amt"
         )
-        u_note = st.text_input(
-            "विवरण / सामान की जानकारी (Optional)", key="u_note"
-        )
+        u_note = st.text_input("Details / Item Notes (Optional)", key="u_note")
 
-        btn_udhari = st.form_submit_button("🔴 उधारी सेव करें")
+        btn_udhari = st.form_submit_button("🔴 Save Entry (You Gave)")
 
     if btn_udhari:
         if not u_outlet.strip():
-            st.error("कृपया ग्राहक या आउटलेट का नाम दर्ज करें!")
+            st.error("Please select or enter a valid customer name!")
         elif u_amount <= 0:
-            st.error("कृपया मान्य राशि दर्ज करें!")
+            st.error("Please enter a valid amount greater than zero!")
         else:
             final_outlet = save_outlet_name(u_outlet)
             formatted_date = u_date.strftime("%d-%m-%Y")
@@ -169,44 +167,46 @@ with col_left:
                 "ID": new_id,
                 "Date": formatted_date,
                 "Outlet Name": final_outlet,
-                "Type": "🔴 Udhari (You Gave)",
+                "Type": "🔴 You Gave",
                 "Debit (You Gave)": float(u_amount),
                 "Credit (You Got)": 0.0,
                 "Balance": float(new_balance),
-                "Note": u_note if u_note else "उधारी बिल",
+                "Note": u_note if u_note else "Credit Bill",
             }
 
             st.session_state.ledger = pd.concat(
                 [st.session_state.ledger, pd.DataFrame([entry])],
                 ignore_index=True,
             )
-            st.success(f"🔴 ₹ {u_amount:,.2f} उधारी दर्ज की गई ({final_outlet})")
+            st.success(
+                f"🔴 Added ₹ {u_amount:,.2f} credit entry for {final_outlet}"
+            )
             st.rerun()
 
-# 🟢 GREEN SECTION: Aapko Mila (Payment Jama / Credit)
+# 🟢 GREEN SECTION: You Got (Credit / Payment Received)
 with col_right:
     st.markdown(
         """
         <div class="green-card">
-            <h3 style="color: #4CAE4C; margin:0;">🟢 आपको मिला (You Got / जमा)</h3>
-            <p style="margin:0; font-size:13px; color:#555;">जब ग्राहक से भुगतान या किश्त प्राप्त हो</p>
+            <h3 style="color: #4CAE4C; margin:0;">🟢 YOU GOT (Credit / Payment)</h3>
+            <p style="margin:0; font-size:13px; color:#555;">Record when a customer pays you back</p>
         </div>
     """,
         unsafe_allow_html=True,
     )
 
     if not st.session_state.outlets_list:
-        st.info("अभी कोई ग्राहक सेव नहीं है। पहले उधारी एंट्री दर्ज करें।")
+        st.info("No customers saved yet. Please add an entry on the left first.")
     else:
         with st.form(key="payment_form", clear_on_submit=True):
             p_date = st.date_input(
-                "तारीख (Date)",
+                "Date",
                 datetime.now(),
                 format="DD/MM/YYYY",
                 key="p_date_key",
             )
             p_outlet = st.selectbox(
-                "ग्राहक / आउटलेट चुनें",
+                "Select Customer / Outlet",
                 st.session_state.outlets_list,
                 key="p_outlet_select",
             )
@@ -220,22 +220,22 @@ with col_right:
                 else 0.0
             )
 
-            st.info(f"👉 **{p_outlet} का कुल बकाया:** ₹ {current_due:,.2f}")
+            st.info(f"👉 **Current Due for {p_outlet}:** ₹ {current_due:,.2f}")
 
             p_amount = st.number_input(
-                "प्राप्त राशि (Amount ₹)", min_value=0.0, step=50.0, key="p_amt"
+                "Received Amount (₹)", min_value=0.0, step=50.0, key="p_amt"
             )
             p_mode = st.selectbox(
-                "भुगतान का तरीका (Payment Mode)",
+                "Payment Mode",
                 ["Cash", "UPI / PhonePe / GPay", "Bank Transfer", "Cheque"],
                 key="p_mode",
             )
 
-            btn_payment = st.form_submit_button("🟢 पेमेंट जमा करें")
+            btn_payment = st.form_submit_button("🟢 Save Payment (You Got)")
 
         if btn_payment:
             if p_amount <= 0:
-                st.error("कृपया मान्य राशि दर्ज करें!")
+                st.error("Please enter a valid amount greater than zero!")
             else:
                 formatted_date = p_date.strftime("%d-%m-%Y")
                 new_balance = current_due - p_amount
@@ -250,11 +250,11 @@ with col_right:
                     "ID": new_id,
                     "Date": formatted_date,
                     "Outlet Name": p_outlet,
-                    "Type": "🟢 Jama (You Got)",
+                    "Type": "🟢 You Got",
                     "Debit (You Gave)": 0.0,
                     "Credit (You Got)": float(p_amount),
                     "Balance": float(new_balance),
-                    "Note": f"पेमेंट ({p_mode})",
+                    "Note": f"Payment ({p_mode})",
                 }
 
                 st.session_state.ledger = pd.concat(
@@ -262,7 +262,7 @@ with col_right:
                     ignore_index=True,
                 )
                 st.success(
-                    f"🟢 ₹ {p_amount:,.2f} जमा दर्ज किया गया ({p_outlet})"
+                    f"🟢 Received ₹ {p_amount:,.2f} payment from {p_outlet}"
                 )
                 st.rerun()
 
@@ -270,17 +270,17 @@ with col_right:
 # 3. CUSTOMER LEDGER DASHBOARD & WHATSAPP REMINDER
 # ------------------------------------------------------------------------------
 st.markdown("---")
-st.subheader("📊 ग्राहक का लेज़र हिसाब एवं रिमाइंड")
+st.subheader("📊 Ledger Dashboard & Payment Reminders")
 
 if not st.session_state.outlets_list:
-    st.info("अभी कोई लेज़र रिकॉर्ड उपलब्ध नहीं है।")
+    st.info("No ledger records available to display.")
 else:
     selected_view_outlet = st.selectbox(
-        "ग्राहक का खाताबुक देखें:",
-        options=["सभी ग्राहक (All Outlets)"] + st.session_state.outlets_list,
+        "View Customer Khatabook:",
+        options=["All Customers"] + st.session_state.outlets_list,
     )
 
-    if selected_view_outlet == "सभी ग्राहक (All Outlets)":
+    if selected_view_outlet == "All Customers":
         df_view = st.session_state.ledger.copy()
     else:
         df_view = st.session_state.ledger[
@@ -293,9 +293,9 @@ else:
     total_due = total_given - total_got
 
     m1, m2, m3 = st.columns(3)
-    m1.metric("कुल दिया (Total Gave)", f"₹ {total_given:,.2f}")
-    m2.metric("कुल मिला (Total Got)", f"₹ {total_got:,.2f}")
-    m3.metric("🔴 कुल बकाया (Net Dues)", f"₹ {total_due:,.2f}")
+    m1.metric("Total You Gave", f"₹ {total_given:,.2f}")
+    m2.metric("Total You Got", f"₹ {total_got:,.2f}")
+    m3.metric("🔴 Net Outstanding Due", f"₹ {total_due:,.2f}")
 
     # Data Table
     st.dataframe(
@@ -313,38 +313,38 @@ else:
         use_container_width=True,
         column_config={
             "ID": st.column_config.NumberColumn("ID", format="%d"),
-            "Date": st.column_config.TextColumn("तारीख (DD-MM-YYYY)"),
+            "Date": st.column_config.TextColumn("Date (DD-MM-YYYY)"),
             "Debit (You Gave)": st.column_config.NumberColumn(
-                "🔴 आपने दिया (₹)", format="₹ %.2f"
+                "🔴 You Gave (₹)", format="₹ %.2f"
             ),
             "Credit (You Got)": st.column_config.NumberColumn(
-                "🟢 आपको मिला (₹)", format="₹ %.2f"
+                "🟢 You Got (₹)", format="₹ %.2f"
             ),
             "Balance": st.column_config.NumberColumn(
-                "बकाया (Balance ₹)", format="₹ %.2f"
+                "Balance Due (₹)", format="₹ %.2f"
             ),
         },
         hide_index=True,
     )
 
     # WhatsApp Payment Reminder Feature
-    if selected_view_outlet != "सभी ग्राहक (All Outlets)" and total_due > 0:
-        st.markdown("### 💬 WhatsApp तकादा (Payment Reminder)")
+    if selected_view_outlet != "All Customers" and total_due > 0:
+        st.markdown("### 💬 Send WhatsApp Payment Reminder")
         wa_col1, wa_col2 = st.columns([2, 1])
         with wa_col1:
             phone_num = st.text_input(
-                "व्हाट्सएप नंबर (जैसे: 919876543210)", placeholder="91XXXXXXXXXX"
+                "WhatsApp Number (e.g. 919876543210)", placeholder="91XXXXXXXXXX"
             )
         with wa_col2:
             st.write("")
             st.write("")
-            if st.button("📲 रिमाइंडर भेजें"):
+            if st.button("📲 Generate Link"):
                 if phone_num.strip():
-                    msg = f"नमस्ते {selected_view_outlet}, खाताबुक के अनुसार आपका कुल बकाया ₹ {total_due:,.2f} है। कृपया जल्द से जल्द भुगतान करें। धन्यवाद!"
+                    msg = f"Hello {selected_view_outlet}, as per our Khatabook record, your total balance due is Rs {total_due:,.2f}. Kindly clear the payment at your earliest convenience. Thank you!"
                     encoded_msg = (
                         pd.Series([msg]).str.replace(" ", "%20").values[0]
                     )
                     url = f"https://api.whatsapp.com/send?phone={phone_num}&text={encoded_msg}"
-                    st.markdown(f"[👉 WhatsApp पर भेजें]({url})")
+                    st.markdown(f"[👉 Click Here to Send via WhatsApp]({url})")
                 else:
-                    st.warning("कृपया व्हाट्सएप नंबर दर्ज करें!")
+                    st.warning("Please enter a valid phone number!")
