@@ -44,20 +44,6 @@ st.markdown(
         border-radius: 8px;
         margin-bottom: 10px;
     }
-    .paid-row {
-        background-color: #d4edda !important;
-        padding: 10px;
-        border-radius: 5px;
-        margin-bottom: 5px;
-        color: #155724;
-    }
-    .dues-row {
-        background-color: #f8d7da !important;
-        padding: 10px;
-        border-radius: 5px;
-        margin-bottom: 5px;
-        color: #721c24;
-    }
     </style>
 """,
     unsafe_allow_html=True,
@@ -126,7 +112,7 @@ def refresh_state_from_db():
     for _, row in df.iterrows():
       outlet_mgr_map[row["Outlet Name"]] = row["Manager Name"]
 
-  # Status Column जोड़ना (Balance > 0 -> DUES, Otherwise -> PAID)
+  # Status Column (Balance > 0 -> DUES, Otherwise -> PAID)
   if not df.empty:
     df["Status"] = df["Balance"].apply(
         lambda b: "🔴 DUES" if b > 0 else "🟢 PAID"
@@ -209,10 +195,11 @@ def save_manager_to_db(mgr_str):
     refresh_state_from_db()
 
 
-# Initialize DB and Load Session State
+# Initialize DB
 init_db()
 if "ledger" not in st.session_state:
   refresh_state_from_db()
+
 
 # ------------------------------------------------------------------------------
 # 2. PDF GENERATION FUNCTION
@@ -268,7 +255,6 @@ def generate_pdf_report(
       textColor=colors.white,
       fontName="Helvetica-Bold",
   )
-
   table_cell_style = ParagraphStyle(
       "TableCell",
       parent=styles["Normal"],
@@ -595,13 +581,13 @@ with col_left:
       st.success(f"🔴 Added Rs {u_amount:,.2f} dues for {final_outlet}")
       st.rerun()
 
-# RECEIVED ENTRY
+# RECEIVED ENTRY (WITH FULL / PART PAYMENT OPTION)
 with col_right:
   st.markdown(
       """
         <div class="green-card">
             <h3 style="color: #4CAE4C; margin:0;">🟢 ADD RECEIVED (You Got)</h3>
-            <p style="margin:0; font-size:13px; color:#555;">Record payment collected from Outlet</p>
+            <p style="margin:0; font-size:13px; color:#555;">Record Full or Part payment collected</p>
         </div>
     """,
       unsafe_allow_html=True,
@@ -610,56 +596,75 @@ with col_right:
   if not st.session_state.outlets_list:
     st.info("No outlets available. Please add an entry on the left first.")
   else:
-    with st.form(key="payment_form", clear_on_submit=True):
-      p_date = st.date_input(
-          "Date", datetime.now(), format="DD/MM/YYYY", key="p_date_key"
-      )
-      p_outlet = st.selectbox(
-          "Select Customer / Outlet",
-          st.session_state.outlets_list,
-          key="p_outlet_select",
-      )
+    p_date = st.date_input(
+        "Date", datetime.now(), format="DD/MM/YYYY", key="p_date_key"
+    )
+    p_outlet = st.selectbox(
+        "Select Customer / Outlet",
+        st.session_state.outlets_list,
+        key="p_outlet_select",
+    )
 
-      default_mgr = st.session_state.outlet_manager_map.get(
-          p_outlet, st.session_state.managers_list[0]
-      )
-      p_manager = st.selectbox(
-          "Sales Manager",
-          st.session_state.managers_list,
-          index=(
-              st.session_state.managers_list.index(default_mgr)
-              if default_mgr in st.session_state.managers_list
-              else 0
-          ),
-          key="p_mgr_select",
-      )
+    default_mgr = st.session_state.outlet_manager_map.get(
+        p_outlet, st.session_state.managers_list[0]
+    )
+    p_manager = st.selectbox(
+        "Sales Manager",
+        st.session_state.managers_list,
+        index=(
+            st.session_state.managers_list.index(default_mgr)
+            if default_mgr in st.session_state.managers_list
+            else 0
+        ),
+        key="p_mgr_select",
+    )
 
-      p_outlet_df = st.session_state.ledger[
-          st.session_state.ledger["Outlet Name"] == p_outlet
-      ]
-      current_due = (
-          p_outlet_df["Balance"].iloc[-1] if not p_outlet_df.empty else 0.0
-      )
+    p_outlet_df = st.session_state.ledger[
+        st.session_state.ledger["Outlet Name"] == p_outlet
+    ]
+    current_due = (
+        p_outlet_df["Balance"].iloc[-1] if not p_outlet_df.empty else 0.0
+    )
 
-      st.info(f"👉 **Current Due for {p_outlet}:** Rs {current_due:,.2f}")
+    st.info(f"👉 **Current Total Due for {p_outlet}:** Rs {current_due:,.2f}")
 
+    # NEW: Option to choose FULL or PART PAYMENT
+    pay_type = st.radio(
+        "Payment Type (भुगतान का प्रकार):",
+        ["Full Payment (पूरा भुगतान)", "Part Payment (आंशिक/किश्त)"],
+        horizontal=True,
+    )
+
+    if pay_type == "Full Payment (पूरा भुगतान)":
+      p_amount = current_due
+      st.success(f"✅ Full Amount Selected: **Rs {p_amount:,.2f}**")
+    else:
       p_amount = st.number_input(
-          "Received Amount (Rs)", min_value=0.0, step=50.0, key="p_amt"
-      )
-      p_mode = st.selectbox(
-          "Payment Mode",
-          ["Cash", "UPI / PhonePe / GPay", "Bank Transfer", "Cheque"],
-          key="p_mode",
+          "Enter Part Amount Received (Rs)",
+          min_value=0.0,
+          max_value=float(current_due) if current_due > 0 else 1000000.0,
+          step=50.0,
+          key="p_amt_part",
       )
 
-      btn_payment = st.form_submit_button("🟢 Save Received Entry")
+    p_mode = st.selectbox(
+        "Payment Mode",
+        ["Cash", "UPI / PhonePe / GPay", "Bank Transfer", "Cheque"],
+        key="p_mode",
+    )
 
-    if btn_payment:
+    if st.button("🟢 Save Received Entry", use_container_width=True):
       if p_amount <= 0:
         st.error("Please enter a valid amount greater than zero!")
       else:
         formatted_date = p_date.strftime("%d-%m-%Y")
         new_balance = current_due - p_amount
+
+        note_label = (
+            f"Full Payment ({p_mode})"
+            if pay_type == "Full Payment (पूरा भुगतान)"
+            else f"Part Payment ({p_mode})"
+        )
 
         entry = {
             "Date": formatted_date,
@@ -669,13 +674,20 @@ with col_right:
             "Debit (You Gave)": 0.0,
             "Credit (You Got)": float(p_amount),
             "Balance": float(new_balance),
-            "Note": f"Payment ({p_mode})",
+            "Note": note_label,
         }
 
         save_entry_to_db(entry)
-        st.success(
-            f"🟢 Received Rs {p_amount:,.2f} payment from {p_outlet}"
-        )
+        if new_balance <= 0:
+          st.success(
+              f"🎉 Full Payment Received from {p_outlet}! Account Balance is"
+              " now 🟢 PAID."
+          )
+        else:
+          st.success(
+              f"🟢 Received Part Payment Rs {p_amount:,.2f} from {p_outlet}."
+              f" Remaining Due: Rs {new_balance:,.2f}"
+          )
         st.rerun()
 
 # ------------------------------------------------------------------------------
@@ -787,13 +799,7 @@ else:
   st.divider()
 
   for idx, row in df_view.iterrows():
-    # If total paid (Balance <= 0), apply green background style using HTML card container
     is_paid = row["Balance"] <= 0
-    bg_style = (
-        "background-color: #d4edda; border-radius: 5px; padding: 4px; margin-bottom: 3px;"
-        if is_paid
-        else "background-color: #f8d7da; border-radius: 5px; padding: 4px; margin-bottom: 3px;"
-    )
 
     with st.container():
       c1, c2, c3, c4, c5, c6, c7, c8, c9, c10 = st.columns(
