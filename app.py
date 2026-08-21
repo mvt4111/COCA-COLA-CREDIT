@@ -1,6 +1,9 @@
 import io
 import sqlite3
 import urllib.parse
+import hashlib
+import hmac
+import secrets as py_secrets
 from datetime import datetime
 
 import pandas as pd
@@ -18,14 +21,187 @@ from reportlab.platypus import (
 import streamlit as st
 
 
-# ------------------------------------------------------------------------------
-# PAGE CONFIGURATION & CUSTOM STYLES
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# PAGE CONFIGURATION
+# ==============================================================================
+
 st.set_page_config(
     page_title="MS MAA VINDHYAWASINI TRADERS (COCA COLA)",
     page_icon="🥤",
     layout="wide",
 )
+
+
+# ==============================================================================
+# 🔐 LOGIN / AUTHENTICATION SYSTEM
+# ==============================================================================
+
+def hash_password(password, salt):
+    """
+    Secure PBKDF2-HMAC-SHA256 password hashing.
+    """
+    return hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt,
+        300_000,
+    ).hex()
+
+
+def verify_password(password, stored_hash, stored_salt):
+    """
+    Verify entered password against stored hash.
+    """
+    try:
+        salt = bytes.fromhex(stored_salt)
+
+        calculated_hash = hash_password(
+            password,
+            salt,
+        )
+
+        return hmac.compare_digest(
+            calculated_hash,
+            stored_hash,
+        )
+
+    except Exception:
+        return False
+
+
+def login_screen():
+
+    st.markdown(
+        """
+        <style>
+        .login-box {
+            max-width: 460px;
+            margin: 80px auto 20px auto;
+            padding: 30px;
+            border-radius: 16px;
+            background: white;
+            box-shadow: 0 5px 25px rgba(0,0,0,0.12);
+            border-top: 6px solid #DC2626;
+        }
+
+        .login-title {
+            text-align: center;
+            color: #111827;
+            font-size: 25px;
+            font-weight: 700;
+        }
+
+        .login-subtitle {
+            text-align: center;
+            color: #64748B;
+            margin-top: 5px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class="login-box">
+            <div class="login-title">
+                🥤 MS MAA VINDHYAWASINI TRADERS
+            </div>
+            <div class="login-subtitle">
+                🔐 Secure Business Login
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    _, login_col, _ = st.columns([1, 2, 1])
+
+    with login_col:
+
+        username = st.text_input(
+            "👤 Username",
+            placeholder="Enter username",
+            key="login_username",
+        )
+
+        password = st.text_input(
+            "🔑 Password",
+            type="password",
+            placeholder="Enter password",
+            key="login_password",
+        )
+
+        if st.button(
+            "🔐 LOGIN",
+            use_container_width=True,
+            type="primary",
+        ):
+
+            username_clean = username.strip().lower()
+
+            try:
+                users = st.secrets["users"]
+                user = users.get(username_clean)
+            except Exception:
+                user = None
+
+            if user:
+
+                stored_hash = user.get(
+                    "password_hash",
+                    "",
+                )
+
+                stored_salt = user.get(
+                    "password_salt",
+                    "",
+                )
+
+                if verify_password(
+                    password,
+                    stored_hash,
+                    stored_salt,
+                ):
+
+                    st.session_state[
+                        "authenticated"
+                    ] = True
+
+                    st.session_state[
+                        "username"
+                    ] = username_clean
+
+                    st.session_state[
+                        "role"
+                    ] = user.get(
+                        "role",
+                        "staff",
+                    )
+
+                    st.rerun()
+
+            st.error(
+                "❌ Invalid username or password."
+            )
+
+
+# ==============================================================================
+# 🔒 LOGIN GATE
+# ==============================================================================
+
+if not st.session_state.get(
+    "authenticated",
+    False,
+):
+
+    login_screen()
+    st.stop()
+
+
+# ==============================================================================
+# CUSTOM STYLES
+# ==============================================================================
 
 st.markdown(
     """
@@ -67,20 +243,36 @@ st.markdown(
 )
 
 
+# ==============================================================================
+# APP HEADER
+# ==============================================================================
+
 st.title("🥤 MS MAA VINDHYAWASINI TRADERS (COCA COLA)")
+
 st.caption(
     "Bill-Wise Ledger System - Auto Generated Bill Code (NAME + SERIAL NO)"
 )
 
 
-# ------------------------------------------------------------------------------
-# 1. DATABASE MANAGEMENT
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# DATABASE
+# ==============================================================================
+
 DB_FILE = "khatabook_billwise_v6.db"
 
 
+def get_connection():
+    conn = sqlite3.connect(
+        DB_FILE,
+        timeout=30,
+    )
+
+    return conn
+
+
 def init_db():
-    conn = sqlite3.connect(DB_FILE)
+
+    conn = get_connection()
     c = conn.cursor()
 
     c.execute(
@@ -123,7 +315,10 @@ def init_db():
     )
 
     c.execute(
-        "INSERT OR IGNORE INTO managers (name) VALUES ('Default Manager')"
+        """
+        INSERT OR IGNORE INTO managers (name)
+        VALUES ('Default Manager')
+        """
     )
 
     conn.commit()
@@ -131,49 +326,65 @@ def init_db():
 
 
 def get_all_bills():
-    conn = sqlite3.connect(DB_FILE)
+
+    conn = get_connection()
 
     df = pd.read_sql_query(
-        "SELECT * FROM bills ORDER BY Bill_ID DESC",
+        """
+        SELECT *
+        FROM bills
+        ORDER BY Bill_ID DESC
+        """,
         conn,
     )
 
     conn.close()
+
     return df
 
 
 def get_all_payments():
-    conn = sqlite3.connect(DB_FILE)
+
+    conn = get_connection()
 
     df = pd.read_sql_query(
-        "SELECT * FROM payments ORDER BY Payment_ID DESC",
+        """
+        SELECT *
+        FROM payments
+        ORDER BY Payment_ID DESC
+        """,
         conn,
     )
 
     conn.close()
+
     return df
 
 
 def get_managers():
-    conn = sqlite3.connect(DB_FILE)
+
+    conn = get_connection()
 
     df = pd.read_sql_query(
-        "SELECT name FROM managers ORDER BY name ASC",
+        """
+        SELECT name
+        FROM managers
+        ORDER BY name ASC
+        """,
         conn,
     )
 
     conn.close()
 
-    return (
-        df["name"].tolist()
-        if not df.empty
-        else ["Default Manager"]
-    )
+    if not df.empty:
+        return df["name"].tolist()
+
+    return ["Default Manager"]
 
 
 def get_outlets():
-    conn = sqlite3.connect(DB_FILE)
 
+    conn = get_connection()
     c = conn.cursor()
 
     c.execute(
@@ -195,25 +406,28 @@ def get_outlets():
     return outlets
 
 
-# ------------------------------------------------------------------------------
+# ==============================================================================
 # AUTO BILL CODE GENERATOR
-# ------------------------------------------------------------------------------
+# ==============================================================================
+
 def generate_auto_code_backend(outlet_name):
+
     clean_name = (
         "".join(
-            e for e in outlet_name
+            e
+            for e in outlet_name
             if e.isalnum()
         ).upper()
         if outlet_name
         else "BILL"
     )
 
-    if len(clean_name) == 0:
+    if not clean_name:
         clean_name = "BILL"
 
     short_code = clean_name[:5]
 
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_connection()
     c = conn.cursor()
 
     c.execute(
@@ -232,9 +446,10 @@ def generate_auto_code_backend(outlet_name):
     return f"{short_code}-{count}"
 
 
-# ------------------------------------------------------------------------------
+# ==============================================================================
 # SAVE NEW BILL
-# ------------------------------------------------------------------------------
+# ==============================================================================
+
 def save_bill_to_db(
     date_str,
     mgr,
@@ -242,56 +457,153 @@ def save_bill_to_db(
     amount,
     note,
 ):
-    bill_no = generate_auto_code_backend(outlet)
 
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_connection()
     c = conn.cursor()
 
-    c.execute(
-        """
-        INSERT INTO bills (
-            Bill_No,
-            Date,
-            Manager_Name,
-            Outlet_Name,
-            Bill_Amount,
-            Paid_Amount,
-            Balance,
-            Status,
-            Note
+    try:
+
+        # Generate code inside same connection
+        clean_name = outlet.strip()
+
+        clean_code_name = "".join(
+            e
+            for e in clean_name
+            if e.isalnum()
+        ).upper()
+
+        if not clean_code_name:
+            clean_code_name = "BILL"
+
+        short_code = clean_code_name[:5]
+
+        c.execute(
+            """
+            SELECT COUNT(*)
+            FROM bills
+            WHERE Outlet_Name = ?
+            """,
+            (clean_name,),
         )
-        VALUES (
-            ?,
-            ?,
-            ?,
-            ?,
-            ?,
-            0.0,
-            ?,
-            '🔴 UNPAID',
-            ?
+
+        count = c.fetchone()[0] + 1
+
+        bill_no = f"{short_code}-{count}"
+
+        # Extra protection against duplicate bill code
+        c.execute(
+            """
+            SELECT 1
+            FROM bills
+            WHERE Bill_No = ?
+            """,
+            (bill_no,),
         )
-        """,
-        (
-            bill_no,
-            date_str,
-            mgr,
-            outlet,
-            amount,
-            amount,
-            note,
-        ),
-    )
 
-    conn.commit()
-    conn.close()
+        if c.fetchone():
 
-    return bill_no
+            count += 1
+            bill_no = f"{short_code}-{count}"
+
+        c.execute(
+            """
+            INSERT INTO bills (
+                Bill_No,
+                Date,
+                Manager_Name,
+                Outlet_Name,
+                Bill_Amount,
+                Paid_Amount,
+                Balance,
+                Status,
+                Note
+            )
+            VALUES (
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                0.0,
+                ?,
+                '🔴 UNPAID',
+                ?
+            )
+            """,
+            (
+                bill_no,
+                date_str,
+                mgr,
+                clean_name,
+                amount,
+                amount,
+                note,
+            ),
+        )
+
+        conn.commit()
+
+        return bill_no
+
+    except sqlite3.IntegrityError:
+
+        conn.rollback()
+
+        # Fallback unique code
+        bill_no = (
+            f"{short_code}-"
+            f"{int(datetime.now().timestamp())}"
+        )
+
+        c.execute(
+            """
+            INSERT INTO bills (
+                Bill_No,
+                Date,
+                Manager_Name,
+                Outlet_Name,
+                Bill_Amount,
+                Paid_Amount,
+                Balance,
+                Status,
+                Note
+            )
+            VALUES (
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                0.0,
+                ?,
+                '🔴 UNPAID',
+                ?
+            )
+            """,
+            (
+                bill_no,
+                date_str,
+                mgr,
+                clean_name,
+                amount,
+                amount,
+                note,
+            ),
+        )
+
+        conn.commit()
+
+        return bill_no
+
+    finally:
+
+        conn.close()
 
 
-# ------------------------------------------------------------------------------
-# UPDATE / MODIFY EXISTING BILL
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# UPDATE BILL
+# ==============================================================================
+
 def update_bill_in_db(
     bill_no,
     date_str,
@@ -300,7 +612,8 @@ def update_bill_in_db(
     amount,
     note,
 ):
-    conn = sqlite3.connect(DB_FILE)
+
+    conn = get_connection()
     c = conn.cursor()
 
     c.execute(
@@ -315,12 +628,15 @@ def update_bill_in_db(
     row = c.fetchone()
 
     if not row:
+
         conn.close()
+
         return False, "Bill not found."
 
     paid_amount = float(row[0])
 
     if amount < paid_amount:
+
         conn.close()
 
         return (
@@ -332,13 +648,16 @@ def update_bill_in_db(
     balance = amount - paid_amount
 
     if balance <= 0:
+
         status = "🟢 PAID"
         balance = 0.0
 
     elif paid_amount > 0:
+
         status = "🔴 PARTIAL"
 
     else:
+
         status = "🔴 UNPAID"
 
     c.execute(
@@ -387,9 +706,10 @@ def update_bill_in_db(
     return True, "Bill updated successfully."
 
 
-# ------------------------------------------------------------------------------
-# RECORD BILL PAYMENT
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# RECORD PAYMENT
+# ==============================================================================
+
 def record_bill_payment(
     bill_no,
     date_str,
@@ -399,41 +719,62 @@ def record_bill_payment(
     mode,
     is_full,
 ):
-    conn = sqlite3.connect(DB_FILE)
+
+    conn = get_connection()
     c = conn.cursor()
 
-    c.execute(
-        """
-        SELECT
-            Bill_Amount,
-            Paid_Amount,
-            Balance
-        FROM bills
-        WHERE Bill_No = ?
-        """,
-        (bill_no,),
-    )
+    try:
 
-    row = c.fetchone()
+        c.execute(
+            """
+            SELECT
+                Bill_Amount,
+                Paid_Amount,
+                Balance
+            FROM bills
+            WHERE Bill_No = ?
+            """,
+            (bill_no,),
+        )
 
-    if row:
+        row = c.fetchone()
+
+        if not row:
+            return False, "Bill not found."
+
         bill_amt, curr_paid, curr_bal = row
 
+        bill_amt = float(bill_amt)
+        curr_paid = float(curr_paid)
+        curr_bal = float(curr_bal)
+
+        if curr_bal <= 0:
+            return False, "This bill is already fully paid."
+
         if is_full:
+
             actual_payment = curr_bal
+
         else:
-            actual_payment = min(
-                paid_amt,
-                curr_bal,
-            )
+
+            if paid_amt <= 0:
+                return False, "Payment amount must be greater than zero."
+
+            if paid_amt > curr_bal:
+                return False, "Payment cannot exceed outstanding balance."
+
+            actual_payment = paid_amt
 
         new_paid = curr_paid + actual_payment
         new_bal = bill_amt - new_paid
 
         if new_bal <= 0:
+
             new_status = "🟢 PAID"
             new_bal = 0.0
+
         else:
+
             new_status = "🔴 PARTIAL"
 
         c.execute(
@@ -477,108 +818,163 @@ def record_bill_payment(
 
         conn.commit()
 
-    conn.close()
+        return True, actual_payment
+
+    except Exception as e:
+
+        conn.rollback()
+
+        return False, str(e)
+
+    finally:
+
+        conn.close()
 
 
-# ------------------------------------------------------------------------------
-# DELETE BILL
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# DELETE BILL - ADMIN ONLY
+# ==============================================================================
+
 def delete_bill_from_db(bill_no):
-    conn = sqlite3.connect(DB_FILE)
+
+    conn = get_connection()
     c = conn.cursor()
 
-    c.execute(
-        "DELETE FROM bills WHERE Bill_No = ?",
-        (bill_no,),
-    )
-
-    c.execute(
-        "DELETE FROM payments WHERE Bill_No = ?",
-        (bill_no,),
-    )
-
-    conn.commit()
-    conn.close()
-
-
-# ------------------------------------------------------------------------------
-# DELETE PAYMENT
-# ------------------------------------------------------------------------------
-def delete_payment_from_db(
-    pay_id,
-    bill_no,
-    amt,
-):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-
-    c.execute(
-        """
-        DELETE FROM payments
-        WHERE Payment_ID = ?
-        """,
-        (pay_id,),
-    )
-
-    c.execute(
-        """
-        SELECT
-            Bill_Amount,
-            Paid_Amount
-        FROM bills
-        WHERE Bill_No = ?
-        """,
-        (bill_no,),
-    )
-
-    row = c.fetchone()
-
-    if row:
-        b_amt, p_amt = row
-
-        n_paid = max(
-            0.0,
-            p_amt - amt,
-        )
-
-        n_bal = b_amt - n_paid
-
-        if n_bal <= 0:
-            n_status = "🟢 PAID"
-        elif n_paid == 0:
-            n_status = "🔴 UNPAID"
-        else:
-            n_status = "🔴 PARTIAL"
+    try:
 
         c.execute(
             """
-            UPDATE bills
-            SET
-                Paid_Amount = ?,
-                Balance = ?,
-                Status = ?
+            DELETE FROM payments
             WHERE Bill_No = ?
             """,
+            (bill_no,),
+        )
+
+        c.execute(
+            """
+            DELETE FROM bills
+            WHERE Bill_No = ?
+            """,
+            (bill_no,),
+        )
+
+        conn.commit()
+
+    finally:
+
+        conn.close()
+
+
+# ==============================================================================
+# DELETE PAYMENT - ADMIN ONLY
+# IMPORTANT: Paid amount is recalculated from remaining payment records.
+# ==============================================================================
+
+def delete_payment_from_db(pay_id, bill_no):
+
+    conn = get_connection()
+    c = conn.cursor()
+
+    try:
+
+        c.execute(
+            """
+            DELETE FROM payments
+            WHERE Payment_ID = ?
+            AND Bill_No = ?
+            """,
             (
-                n_paid,
-                n_bal,
-                n_status,
+                pay_id,
                 bill_no,
             ),
         )
 
-    conn.commit()
-    conn.close()
+        c.execute(
+            """
+            SELECT
+                Bill_Amount
+            FROM bills
+            WHERE Bill_No = ?
+            """,
+            (bill_no,),
+        )
+
+        bill_row = c.fetchone()
+
+        if bill_row:
+
+            bill_amount = float(
+                bill_row[0]
+            )
+
+            c.execute(
+                """
+                SELECT
+                    COALESCE(
+                        SUM(Amount_Paid),
+                        0
+                    )
+                FROM payments
+                WHERE Bill_No = ?
+                """,
+                (bill_no,),
+            )
+
+            total_paid = float(
+                c.fetchone()[0]
+            )
+
+            balance = bill_amount - total_paid
+
+            if balance <= 0:
+
+                balance = 0.0
+                status = "🟢 PAID"
+
+            elif total_paid <= 0:
+
+                total_paid = 0.0
+                status = "🔴 UNPAID"
+
+            else:
+
+                status = "🔴 PARTIAL"
+
+            c.execute(
+                """
+                UPDATE bills
+                SET
+                    Paid_Amount = ?,
+                    Balance = ?,
+                    Status = ?
+                WHERE Bill_No = ?
+                """,
+                (
+                    total_paid,
+                    balance,
+                    status,
+                    bill_no,
+                ),
+            )
+
+        conn.commit()
+
+    finally:
+
+        conn.close()
 
 
-# ------------------------------------------------------------------------------
+# ==============================================================================
 # SAVE MANAGER
-# ------------------------------------------------------------------------------
+# ==============================================================================
+
 def save_manager_to_db(mgr_str):
+
     clean_mgr = mgr_str.strip().title()
 
     if clean_mgr:
-        conn = sqlite3.connect(DB_FILE)
+
+        conn = get_connection()
         c = conn.cursor()
 
         c.execute(
@@ -593,17 +989,21 @@ def save_manager_to_db(mgr_str):
         conn.close()
 
 
-# ------------------------------------------------------------------------------
+# ==============================================================================
 # INITIALIZE DATABASE
-# ------------------------------------------------------------------------------
+# ==============================================================================
+
 init_db()
 
 
-# ------------------------------------------------------------------------------
-# DAYS PENDING CALCULATOR
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# DAYS PENDING
+# ==============================================================================
+
 def calculate_days_pending(bill_date_str):
+
     try:
+
         b_date = datetime.strptime(
             bill_date_str,
             "%d-%m-%Y",
@@ -616,16 +1016,19 @@ def calculate_days_pending(bill_date_str):
         return max(0, days)
 
     except Exception:
+
         return 0
 
 
-# ------------------------------------------------------------------------------
-# PDF REPORT GENERATOR - UPDATED
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# PDF REPORT
+# ==============================================================================
+
 def generate_pdf_report(
     df_data,
     subtitle_info="",
 ):
+
     buffer = io.BytesIO()
 
     doc = SimpleDocTemplate(
@@ -641,9 +1044,6 @@ def generate_pdf_report(
 
     styles = getSampleStyleSheet()
 
-    # --------------------------------------------------------------------------
-    # MAIN TITLE
-    # --------------------------------------------------------------------------
     title_style = ParagraphStyle(
         "DocTitle",
         parent=styles["Heading1"],
@@ -654,9 +1054,6 @@ def generate_pdf_report(
         spaceAfter=2,
     )
 
-    # --------------------------------------------------------------------------
-    # SUB TITLE
-    # --------------------------------------------------------------------------
     sub_title_style = ParagraphStyle(
         "DocSubTitle",
         parent=styles["Normal"],
@@ -667,9 +1064,6 @@ def generate_pdf_report(
         spaceAfter=8,
     )
 
-    # --------------------------------------------------------------------------
-    # OUTLET NAME - BIG & BOLD
-    # --------------------------------------------------------------------------
     outlet_style = ParagraphStyle(
         "OutletTitle",
         parent=styles["Normal"],
@@ -680,9 +1074,6 @@ def generate_pdf_report(
         spaceAfter=5,
     )
 
-    # --------------------------------------------------------------------------
-    # INFO STYLE
-    # --------------------------------------------------------------------------
     info_style = ParagraphStyle(
         "DocInfo",
         parent=styles["Normal"],
@@ -692,9 +1083,6 @@ def generate_pdf_report(
         spaceAfter=10,
     )
 
-    # --------------------------------------------------------------------------
-    # TABLE HEADER
-    # --------------------------------------------------------------------------
     table_hdr_style = ParagraphStyle(
         "TableHdr",
         parent=styles["Normal"],
@@ -704,9 +1092,6 @@ def generate_pdf_report(
         fontName="Helvetica-Bold",
     )
 
-    # --------------------------------------------------------------------------
-    # NORMAL TABLE CELL
-    # --------------------------------------------------------------------------
     table_cell_style = ParagraphStyle(
         "TableCell",
         parent=styles["Normal"],
@@ -715,33 +1100,20 @@ def generate_pdf_report(
         textColor=colors.HexColor("#334155"),
     )
 
-    # --------------------------------------------------------------------------
-    # RED STATUS
-    # --------------------------------------------------------------------------
     red_status_style = ParagraphStyle(
         "RedStatus",
         parent=table_cell_style,
         textColor=colors.HexColor("#DC2626"),
         fontName="Helvetica-Bold",
-        fontSize=8,
-        leading=10,
     )
 
-    # --------------------------------------------------------------------------
-    # GREEN STATUS
-    # --------------------------------------------------------------------------
     green_status_style = ParagraphStyle(
         "GreenStatus",
         parent=table_cell_style,
         textColor=colors.HexColor("#16A34A"),
         fontName="Helvetica-Bold",
-        fontSize=8,
-        leading=10,
     )
 
-    # --------------------------------------------------------------------------
-    # RED BALANCE
-    # --------------------------------------------------------------------------
     red_balance_style = ParagraphStyle(
         "RedBalance",
         parent=table_cell_style,
@@ -749,9 +1121,6 @@ def generate_pdf_report(
         fontName="Helvetica-Bold",
     )
 
-    # --------------------------------------------------------------------------
-    # GREEN PAID AMOUNT
-    # --------------------------------------------------------------------------
     green_amount_style = ParagraphStyle(
         "GreenAmount",
         parent=table_cell_style,
@@ -759,9 +1128,6 @@ def generate_pdf_report(
         fontName="Helvetica-Bold",
     )
 
-    # --------------------------------------------------------------------------
-    # TOTAL DUES STYLE
-    # --------------------------------------------------------------------------
     total_dues_style = ParagraphStyle(
         "TotalDues",
         parent=styles["Normal"],
@@ -774,9 +1140,6 @@ def generate_pdf_report(
         spaceAfter=5,
     )
 
-    # --------------------------------------------------------------------------
-    # HEADER
-    # --------------------------------------------------------------------------
     elements.append(
         Paragraph(
             "🥤 MS MAA VINDHYAWASINI TRADERS",
@@ -791,23 +1154,25 @@ def generate_pdf_report(
         )
     )
 
-    # --------------------------------------------------------------------------
-    # OUTLET NAME
-    # --------------------------------------------------------------------------
     outlet_name_for_pdf = ""
 
     if "Outlet:" in subtitle_info:
+
         try:
+
             outlet_name_for_pdf = (
                 subtitle_info
                 .split("Outlet:", 1)[1]
                 .split("|", 1)[0]
                 .strip()
             )
+
         except Exception:
+
             outlet_name_for_pdf = ""
 
     if not outlet_name_for_pdf:
+
         outlet_name_for_pdf = "All Outlets"
 
     elements.append(
@@ -817,9 +1182,6 @@ def generate_pdf_report(
         )
     )
 
-    # --------------------------------------------------------------------------
-    # STATEMENT INFO
-    # --------------------------------------------------------------------------
     elements.append(
         Paragraph(
             f"<b>Statement Info:</b> {subtitle_info} | "
@@ -829,9 +1191,6 @@ def generate_pdf_report(
         )
     )
 
-    # --------------------------------------------------------------------------
-    # RED LINE
-    # --------------------------------------------------------------------------
     elements.append(
         HRFlowable(
             width="100%",
@@ -841,10 +1200,6 @@ def generate_pdf_report(
         )
     )
 
-    # --------------------------------------------------------------------------
-    # PDF TABLE
-    # DUES DAYS REMOVED
-    # --------------------------------------------------------------------------
     headers = [
         "Bill Code",
         "Date",
@@ -865,29 +1220,27 @@ def generate_pdf_report(
         ]
     ]
 
-    # --------------------------------------------------------------------------
-    # TABLE DATA
-    # --------------------------------------------------------------------------
     for _, row in df_data.iterrows():
 
         status = str(row["Status"])
 
-        # PAID = GREEN
-        # UNPAID / PARTIAL = RED
-        if "PAID" in status and "UNPAID" not in status:
+        if (
+            "PAID" in status
+            and "UNPAID" not in status
+        ):
+
             status_style = green_status_style
+
         else:
+
             status_style = red_status_style
 
-        status_text = Paragraph(
-            status,
-            status_style,
-        )
-
-        # Balance color
         if float(row["Balance"]) > 0:
+
             balance_style = red_balance_style
+
         else:
+
             balance_style = green_status_style
 
         table_data.append(
@@ -922,13 +1275,13 @@ def generate_pdf_report(
                     balance_style,
                 ),
 
-                status_text,
+                Paragraph(
+                    status,
+                    status_style,
+                ),
             ]
         )
 
-    # --------------------------------------------------------------------------
-    # TABLE
-    # --------------------------------------------------------------------------
     t = Table(
         table_data,
         colWidths=[
@@ -952,28 +1305,24 @@ def generate_pdf_report(
                     (-1, 0),
                     colors.HexColor("#1E293B"),
                 ),
-
                 (
                     "ALIGN",
                     (0, 0),
                     (-1, 0),
                     "CENTER",
                 ),
-
                 (
                     "ALIGN",
                     (0, 1),
                     (-1, -1),
                     "LEFT",
                 ),
-
                 (
                     "VALIGN",
                     (0, 0),
                     (-1, -1),
                     "MIDDLE",
                 ),
-
                 (
                     "GRID",
                     (0, 0),
@@ -981,7 +1330,6 @@ def generate_pdf_report(
                     0.5,
                     colors.HexColor("#CBD5E1"),
                 ),
-
                 (
                     "ROWBACKGROUNDS",
                     (0, 1),
@@ -991,7 +1339,6 @@ def generate_pdf_report(
                         colors.HexColor("#F8FAFC"),
                     ],
                 ),
-
                 (
                     "PADDING",
                     (0, 0),
@@ -1004,9 +1351,6 @@ def generate_pdf_report(
 
     elements.append(t)
 
-    # --------------------------------------------------------------------------
-    # TOTAL NET DUES
-    # --------------------------------------------------------------------------
     total_net_dues = float(
         df_data["Balance"].sum()
     )
@@ -1028,9 +1372,6 @@ def generate_pdf_report(
         )
     )
 
-    # --------------------------------------------------------------------------
-    # FOOTER
-    # --------------------------------------------------------------------------
     footer_style = ParagraphStyle(
         "Footer",
         parent=styles["Normal"],
@@ -1048,9 +1389,6 @@ def generate_pdf_report(
         )
     )
 
-    # --------------------------------------------------------------------------
-    # BUILD PDF
-    # --------------------------------------------------------------------------
     doc.build(elements)
 
     buffer.seek(0)
@@ -1058,21 +1396,65 @@ def generate_pdf_report(
     return buffer.getvalue()
 
 
-# ------------------------------------------------------------------------------
+# ==============================================================================
 # FETCH DATA
-# ------------------------------------------------------------------------------
+# ==============================================================================
+
 managers_list = get_managers()
 outlets_list = get_outlets()
 bills_df = get_all_bills()
 payments_df = get_all_payments()
 
 
-# ------------------------------------------------------------------------------
-# 2. SIDEBAR SETUP
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# SIDEBAR
+# ==============================================================================
+
 with st.sidebar:
 
     st.header("⚙️ Master Settings")
+
+    current_username = st.session_state.get(
+        "username",
+        "Unknown",
+    )
+
+    current_role = st.session_state.get(
+        "role",
+        "staff",
+    )
+
+    st.success(
+        f"👤 Logged in: {current_username}"
+    )
+
+    st.caption(
+        f"Role: {current_role.upper()}"
+    )
+
+    if st.button(
+        "🚪 Logout",
+        use_container_width=True,
+    ):
+
+        for key in [
+            "authenticated",
+            "username",
+            "role",
+        ]:
+
+            st.session_state.pop(
+                key,
+                None,
+            )
+
+        st.rerun()
+
+    st.divider()
+
+    # --------------------------------------------------------------------------
+    # MANAGER SETUP
+    # --------------------------------------------------------------------------
 
     with st.expander("👤 Manager Setup"):
 
@@ -1080,11 +1462,15 @@ with st.sidebar:
             "Add New Sales Manager"
         )
 
-        if st.button("Save Manager"):
+        if st.button(
+            "Save Manager"
+        ):
 
             if new_mgr.strip():
 
-                save_manager_to_db(new_mgr)
+                save_manager_to_db(
+                    new_mgr
+                )
 
                 st.success(
                     f"Added Manager: {new_mgr}"
@@ -1099,6 +1485,10 @@ with st.sidebar:
         st.write(
             ", ".join(managers_list)
         )
+
+    # --------------------------------------------------------------------------
+    # BACKUP
+    # --------------------------------------------------------------------------
 
     with st.expander("💾 Backup CSV"):
 
@@ -1121,17 +1511,19 @@ with st.sidebar:
             )
 
 
-# ------------------------------------------------------------------------------
-# 3. TRANSACTIONS ENTRY SECTION
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# TRANSACTIONS
+# ==============================================================================
+
 st.markdown("---")
 
 col_left, col_right = st.columns(2)
 
 
-# ------------------------------------------------------------------------------
+# ==============================================================================
 # CREATE NEW BILL
-# ------------------------------------------------------------------------------
+# ==============================================================================
+
 with col_left:
 
     st.markdown(
@@ -1171,7 +1563,10 @@ with col_left:
         key="b_outlet_select",
     )
 
-    if selected_b_outlet == "+ Add New Customer/Outlet":
+    if (
+        selected_b_outlet
+        == "+ Add New Customer/Outlet"
+    ):
 
         b_outlet = st.text_input(
             "Enter Store Name (दुकान का नाम)",
@@ -1250,9 +1645,10 @@ with col_left:
             st.rerun()
 
 
-# ------------------------------------------------------------------------------
+# ==============================================================================
 # PAYMENT RECEIVED
-# ------------------------------------------------------------------------------
+# ==============================================================================
+
 with col_right:
 
     st.markdown(
@@ -1284,7 +1680,7 @@ with col_right:
             key="p_outlet_select",
         )
 
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_connection()
 
         unpaid_bills_df = pd.read_sql_query(
             """
@@ -1414,7 +1810,7 @@ with col_right:
                         == "Full Bill Payment (पूरा बिल चुकता)"
                     )
 
-                    record_bill_payment(
+                    success, result = record_bill_payment(
                         str(
                             selected_bill["Bill_No"]
                         ),
@@ -1430,19 +1826,28 @@ with col_right:
                         is_full_flag,
                     )
 
-                    st.success(
-                        f"🟢 Payment of "
-                        f"Rs {p_amount:,.2f} "
-                        f"recorded for Bill "
-                        f"{selected_bill['Bill_No']}"
-                    )
+                    if success:
 
-                    st.rerun()
+                        st.success(
+                            f"🟢 Payment of "
+                            f"Rs {result:,.2f} "
+                            f"recorded for Bill "
+                            f"{selected_bill['Bill_No']}"
+                        )
+
+                        st.rerun()
+
+                    else:
+
+                        st.error(
+                            f"❌ {result}"
+                        )
 
 
-# ------------------------------------------------------------------------------
-# 4. DASHBOARD & TABS
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# DASHBOARD
+# ==============================================================================
+
 st.markdown("---")
 
 st.subheader(
@@ -1457,9 +1862,10 @@ tab_bills, tab_payments = st.tabs(
 )
 
 
-# ------------------------------------------------------------------------------
-# TAB 1: ALL BILLS
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# TAB 1 - ALL BILLS
+# ==============================================================================
+
 with tab_bills:
 
     if bills_df.empty:
@@ -1525,9 +1931,6 @@ with tab_bills:
                 == selected_outlet_filter
             ]
 
-        # ----------------------------------------------------------------------
-        # ONLY TOTAL NET DUES
-        # ----------------------------------------------------------------------
         tot_due = df_view["Balance"].sum()
 
         st.metric(
@@ -1539,10 +1942,6 @@ with tab_bills:
             "#### 📋 Detailed Bills"
         )
 
-        # ----------------------------------------------------------------------
-        # TABLE HEADER
-        # DUES DAYS SECOND LAST
-        # ----------------------------------------------------------------------
         (
             h_col1,
             h_col2,
@@ -1673,7 +2072,6 @@ with tab_bills:
                         "**🔴 UNPAID**"
                     )
 
-                # DUES DAYS - SECOND LAST
                 if not is_paid:
 
                     c9.markdown(
@@ -1689,6 +2087,7 @@ with tab_bills:
                 # ------------------------------------------------------------------
                 # EDIT
                 # ------------------------------------------------------------------
+
                 if c10.button(
                     "✏️",
                     key=f"edit_b_{row['Bill_No']}",
@@ -1702,23 +2101,31 @@ with tab_bills:
                     st.rerun()
 
                 # ------------------------------------------------------------------
-                # DELETE
+                # DELETE - ADMIN ONLY
                 # ------------------------------------------------------------------
-                if c11.button(
-                    "🗑️",
-                    key=f"del_b_{row['Bill_No']}",
-                    help="Delete this bill",
-                ):
 
-                    st.session_state[
-                        f"confirm_delete_bill_{row['Bill_No']}"
-                    ] = True
+                if current_role == "admin":
 
-                    st.rerun()
+                    if c11.button(
+                        "🗑️",
+                        key=f"del_b_{row['Bill_No']}",
+                        help="Delete this bill",
+                    ):
+
+                        st.session_state[
+                            f"confirm_delete_bill_{row['Bill_No']}"
+                        ] = True
+
+                        st.rerun()
+
+                else:
+
+                    c11.write("🔒")
 
                 # ------------------------------------------------------------------
                 # EDIT FORM
                 # ------------------------------------------------------------------
+
                 if st.session_state.get(
                     f"editing_bill_{row['Bill_No']}",
                     False,
@@ -1887,11 +2294,15 @@ with tab_bills:
                             st.rerun()
 
                 # ------------------------------------------------------------------
-                # DELETE CONFIRMATION
+                # DELETE CONFIRMATION - ADMIN ONLY
                 # ------------------------------------------------------------------
-                if st.session_state.get(
-                    f"confirm_delete_bill_{row['Bill_No']}",
-                    False,
+
+                if (
+                    current_role == "admin"
+                    and st.session_state.get(
+                        f"confirm_delete_bill_{row['Bill_No']}",
+                        False,
+                    )
                 ):
 
                     st.markdown(
@@ -1956,6 +2367,7 @@ with tab_bills:
         # ----------------------------------------------------------------------
         # PDF EXPORT
         # ----------------------------------------------------------------------
+
         st.markdown("---")
 
         rep_sub = (
@@ -1980,9 +2392,10 @@ with tab_bills:
         )
 
 
-# ------------------------------------------------------------------------------
-# TAB 2: PAYMENTS HISTORY
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# TAB 2 - PAYMENTS HISTORY
+# ==============================================================================
+
 with tab_payments:
 
     st.markdown(
@@ -2085,24 +2498,38 @@ with tab_payments:
                     p_row["Payment_Mode"]
                 )
 
-                if pc7.button(
-                    "🗑️",
-                    key=f"del_p_{p_row['Payment_ID']}",
-                    help="Delete payment entry",
-                ):
+                # ------------------------------------------------------------------
+                # PAYMENT DELETE - ADMIN ONLY
+                # ------------------------------------------------------------------
 
-                    st.session_state[
-                        f"confirm_delete_payment_{p_row['Payment_ID']}"
-                    ] = True
+                if current_role == "admin":
 
-                    st.rerun()
+                    if pc7.button(
+                        "🗑️",
+                        key=f"del_p_{p_row['Payment_ID']}",
+                        help="Delete payment entry",
+                    ):
+
+                        st.session_state[
+                            f"confirm_delete_payment_{p_row['Payment_ID']}"
+                        ] = True
+
+                        st.rerun()
+
+                else:
+
+                    pc7.write("🔒")
 
                 # ------------------------------------------------------------------
                 # PAYMENT DELETE CONFIRMATION
                 # ------------------------------------------------------------------
-                if st.session_state.get(
-                    f"confirm_delete_payment_{p_row['Payment_ID']}",
-                    False,
+
+                if (
+                    current_role == "admin"
+                    and st.session_state.get(
+                        f"confirm_delete_payment_{p_row['Payment_ID']}",
+                        False,
+                    )
                 ):
 
                     st.markdown(
@@ -2143,7 +2570,6 @@ with tab_payments:
                             delete_payment_from_db(
                                 p_row["Payment_ID"],
                                 p_row["Bill_No"],
-                                p_row["Amount_Paid"],
                             )
 
                             st.session_state[
@@ -2177,6 +2603,7 @@ with tab_payments:
         # ----------------------------------------------------------------------
         # WHATSAPP RECEIPT
         # ----------------------------------------------------------------------
+
         st.markdown("---")
 
         st.markdown(
@@ -2201,7 +2628,18 @@ with tab_payments:
                 "💬 Send Latest Payment Confirmation Receipt"
             ):
 
-                if rec_wa_phone.strip():
+                phone = (
+                    rec_wa_phone
+                    .strip()
+                    .replace(" ", "")
+                    .replace("-", "")
+                    .replace("+", "")
+                )
+
+                if (
+                    phone.isdigit()
+                    and 10 <= len(phone) <= 15
+                ):
 
                     msg = (
                         "*🥤 MS MAA VINDHYAWASINI TRADERS*\n"
@@ -2258,7 +2696,7 @@ with tab_payments:
                     wa_link = (
                         "https://api.whatsapp.com/send"
                         "?phone="
-                        f"{rec_wa_phone.strip()}"
+                        f"{phone}"
                         f"&text={encoded_msg}"
                     )
 
@@ -2270,5 +2708,6 @@ with tab_payments:
                 else:
 
                     st.warning(
-                        "Please enter a valid phone number!"
+                        "Please enter a valid mobile number "
+                        "with country code."
                     )
