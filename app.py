@@ -1,7 +1,6 @@
 import io
 import sqlite3
 import urllib.parse
-import base64
 from datetime import datetime
 
 import pandas as pd
@@ -658,7 +657,8 @@ init_db()
 
 # ------------------------------------------------------------------------------
 # PDF REPORT GENERATOR
-# HIGH DUES DAYS FIRST
+# DUES DAYS = SECOND LAST
+# PAID ROW = COMPLETE GREEN
 # ------------------------------------------------------------------------------
 def generate_pdf_report(
     df_data,
@@ -782,40 +782,6 @@ def generate_pdf_report(
     )
 
     # --------------------------------------------------------------------------
-    # SORT PDF
-    # HIGHER DUES DAYS FIRST
-    # PAID BILLS WILL BE AT BOTTOM
-    # --------------------------------------------------------------------------
-    df_data = df_data.copy()
-
-    def get_pdf_dues_days(row):
-
-        try:
-
-            if float(row["Balance"]) <= 0:
-                return 0
-
-            return calculate_days_pending(
-                str(row["Date"])
-            )
-
-        except Exception:
-
-            return 0
-
-    df_data["_Dues_Days_Sort"] = df_data.apply(
-        get_pdf_dues_days,
-        axis=1,
-    )
-
-    df_data = df_data.sort_values(
-        by="_Dues_Days_Sort",
-        ascending=False,
-    ).drop(
-        columns=["_Dues_Days_Sort"]
-    )
-
-    # --------------------------------------------------------------------------
     # HEADER
     # --------------------------------------------------------------------------
     elements.append(
@@ -884,6 +850,10 @@ def generate_pdf_report(
         )
     )
 
+    # --------------------------------------------------------------------------
+    # HEADERS
+    # DUES DAYS SECOND LAST
+    # --------------------------------------------------------------------------
     headers = [
         "Bill Code",
         "Date",
@@ -1625,6 +1595,10 @@ with tab_bills:
             "#### 📋 Detailed Bills"
         )
 
+        # ----------------------------------------------------------------------
+        # BILL TABLE HEADER
+        # DUES DAYS SECOND LAST
+        # ----------------------------------------------------------------------
         (
             h_col1,
             h_col2,
@@ -2035,9 +2009,38 @@ with tab_bills:
                             st.rerun()
 
         # ----------------------------------------------------------------------
-        # PDF EXPORT + VIEW PDF
+        # PDF EXPORT
+        # HIGHEST DUES DAYS FIRST
         # ----------------------------------------------------------------------
         st.markdown("---")
+
+        pdf_df = df_view.copy()
+
+        if not pdf_df.empty:
+
+            pdf_df["_Dues_Days"] = pdf_df.apply(
+                lambda r: (
+                    0
+                    if float(r["Balance"]) <= 0
+                    else calculate_days_pending(
+                        str(r["Date"])
+                    )
+                ),
+                axis=1,
+            )
+
+            # --------------------------------------------------------------
+            # HIGHEST DUES DAYS FIRST
+            # --------------------------------------------------------------
+            pdf_df = pdf_df.sort_values(
+                by="_Dues_Days",
+                ascending=False,
+            )
+
+            # Temporary helper column remove
+            pdf_df = pdf_df.drop(
+                columns=["_Dues_Days"]
+            )
 
         rep_sub = (
             f"Outlet: {selected_outlet_filter} | "
@@ -2045,296 +2048,263 @@ with tab_bills:
         )
 
         pdf_bytes = generate_pdf_report(
-            df_view,
+            pdf_df,
             subtitle_info=rep_sub,
         )
 
-        pdf_file_name = (
-            f"Bill_Statement_"
-            f"{selected_outlet_filter}_"
-            f"{datetime.now().strftime('%d%m%Y')}.pdf"
+        st.download_button(
+            label="📄 Download Bills PDF Statement",
+            data=pdf_bytes,
+            file_name=(
+                f"Bill_Statement_"
+                f"{selected_outlet_filter}_"
+                f"{datetime.now().strftime('%d%m%Y')}.pdf"
+            ),
+            mime="application/pdf",
         )
 
-        pdf_col1, pdf_col2 = st.columns(2)
-
-        with pdf_col1:
-
-            st.download_button(
-                label="📥 Download Bills PDF Statement",
-                data=pdf_bytes,
-                file_name=pdf_file_name,
-                mime="application/pdf",
-                use_container_width=True,
-            )
-
-        with pdf_col2:
-
-            # ------------------------------------------------------------------
-            # VIEW PDF
-            # ------------------------------------------------------------------
-            pdf_base64 = base64.b64encode(
-                pdf_bytes
-            ).decode("utf-8")
-
-            pdf_viewer = f"""
-            <a href="data:application/pdf;base64,{pdf_base64}"
-               target="_blank"
-               style="
-                   display:block;
-                   width:100%;
-                   box-sizing:border-box;
-                   text-align:center;
-                   background-color:#2563EB;
-                   color:white;
-                   padding:11px 20px;
-                   border-radius:8px;
-                   text-decoration:none;
-                   font-weight:bold;
-                   font-size:16px;
-                   margin-top:1px;
-               ">
-               👁️ View PDF
-            </a>
-            """
-
-            st.markdown(
-                pdf_viewer,
-                unsafe_allow_html=True,
-            )
-
         # ----------------------------------------------------------------------
-        # WHATSAPP BILL-WISE WRITTEN MESSAGE
-        # PAID BILL EXCLUDED
-        # OUTLET SELECTION FIRST
+        # WHATSAPP OUTLET-WISE WRITTEN MESSAGE
         # ----------------------------------------------------------------------
         st.markdown("---")
 
         st.markdown(
-            "#### 📲 Bill-wise WhatsApp Message"
+            "#### 📲 Outlet-wise WhatsApp Message"
         )
 
-        # ----------------------------------------------------------------------
-        # ONLY OUTLETS HAVING OUTSTANDING BALANCE
-        # ----------------------------------------------------------------------
-        wa_outlet_df = df_view[
-            df_view["Balance"] > 0
-        ].copy()
+        wa_outlet_col1, wa_outlet_col2 = st.columns(2)
 
-        if wa_outlet_df.empty:
+        with wa_outlet_col1:
 
-            st.success(
-                "🎉 Koi outstanding bill nahi hai. "
-                "PAID bills ke liye WhatsApp message nahi bheja jayega."
+            # --------------------------------------------------------------
+            # OUTLET LIST
+            # --------------------------------------------------------------
+            wa_outlet_options = sorted(
+                df_view["Outlet_Name"]
+                .dropna()
+                .unique()
+                .tolist()
             )
 
-        else:
-
-            wa_outlets = sorted(
-                wa_outlet_df[
-                    "Outlet_Name"
-                ].dropna().unique().tolist()
+            selected_wa_outlet = st.selectbox(
+                "Select Outlet for WhatsApp Message:",
+                wa_outlet_options,
+                key="wa_outlet_select",
             )
 
-            wa_bill_col1, wa_bill_col2 = st.columns(2)
-
-            with wa_bill_col1:
-
-                # ------------------------------------------------------------------
-                # SELECT OUTLET FOR WHATSAPP
-                # ------------------------------------------------------------------
-                selected_wa_outlet = st.selectbox(
-                    "Select Outlet / Customer for WhatsApp:",
-                    wa_outlets,
-                    key="wa_outlet_select",
-                )
-
-            # ----------------------------------------------------------------------
-            # BILLS FOR SELECTED OUTLET
-            # ONLY OUTSTANDING BILLS
-            # ----------------------------------------------------------------------
-            selected_wa_outlet_df = wa_outlet_df[
-                wa_outlet_df["Outlet_Name"]
-                == selected_wa_outlet
-            ].copy()
-
-            # Higher dues days first
-            selected_wa_outlet_df["_Dues_Days"] = (
-                selected_wa_outlet_df.apply(
-                    lambda r: calculate_days_pending(
-                        str(r["Date"])
-                    ),
-                    axis=1,
-                )
-            )
-
-            selected_wa_outlet_df = (
-                selected_wa_outlet_df
-                .sort_values(
-                    by="_Dues_Days",
-                    ascending=False,
-                )
-                .drop(
-                    columns=["_Dues_Days"]
-                )
-            )
-
-            wa_bill_options = {}
-
-            for _, wa_row in selected_wa_outlet_df.iterrows():
-
-                wa_bill_options[
-                    f"{wa_row['Bill_No']} | "
-                    f"Date: {wa_row['Date']} | "
-                    f"Balance: Rs "
-                    f"{wa_row['Balance']:,.2f}"
-                ] = wa_row
-
-            with wa_bill_col2:
-
-                selected_wa_bill_label = st.selectbox(
-                    "Select Outstanding Bill:",
-                    list(wa_bill_options.keys()),
-                    key="wa_bill_select",
-                )
-
-                selected_wa_bill = wa_bill_options[
-                    selected_wa_bill_label
-                ]
+        with wa_outlet_col2:
 
             wa_phone = st.text_input(
                 "Customer Mobile No.",
                 placeholder="91XXXXXXXXXX",
-                key="wa_bill_phone",
+                key="wa_outlet_phone",
             )
 
-            if st.button(
-                "💬 Generate Bill-wise WhatsApp Message",
-                use_container_width=True,
-            ):
+        if st.button(
+            "💬 Generate Outlet-wise WhatsApp Message",
+            use_container_width=True,
+        ):
 
-                if not wa_phone.strip():
+            if not wa_phone.strip():
 
-                    st.warning(
-                        "Please enter customer mobile number."
+                st.warning(
+                    "Please enter customer mobile number."
+                )
+
+            else:
+
+                # ----------------------------------------------------------
+                # SELECTED OUTLET ALL BILLS
+                # ----------------------------------------------------------
+                outlet_df = df_view[
+                    df_view["Outlet_Name"]
+                    == selected_wa_outlet
+                ].copy()
+
+                # ----------------------------------------------------------
+                # CALCULATE DUES DAYS
+                # ----------------------------------------------------------
+                outlet_df["_Dues_Days"] = outlet_df.apply(
+                    lambda r: (
+                        0
+                        if float(r["Balance"]) <= 0
+                        else calculate_days_pending(
+                            str(r["Date"])
+                        )
+                    ),
+                    axis=1,
+                )
+
+                # ----------------------------------------------------------
+                # HIGHEST DUES DAYS FIRST
+                # ----------------------------------------------------------
+                outlet_df = outlet_df.sort_values(
+                    by="_Dues_Days",
+                    ascending=False,
+                )
+
+                # ----------------------------------------------------------
+                # OUTLET TOTALS
+                # ----------------------------------------------------------
+                total_bill_amount = float(
+                    outlet_df["Bill_Amount"].sum()
+                )
+
+                total_paid_amount = float(
+                    outlet_df["Paid_Amount"].sum()
+                )
+
+                total_balance = float(
+                    outlet_df["Balance"].sum()
+                )
+
+                # ----------------------------------------------------------
+                # MESSAGE HEADER
+                # ----------------------------------------------------------
+                msg = (
+                    "*🥤 MS MAA VINDHYAWASINI TRADERS*\n"
+                    "*OUTLET-WISE BILL STATEMENT / PAYMENT STATUS*\n"
+                    "-----------------------------------\n"
+                    f"🏪 *Outlet:* {selected_wa_outlet}\n"
+                    f"📅 *Statement Date:* "
+                    f"{datetime.now().strftime('%d-%m-%Y')}\n"
+                    "-----------------------------------\n"
+                )
+
+                # ----------------------------------------------------------
+                # ALL BILLS OF SELECTED OUTLET
+                # ----------------------------------------------------------
+                for _, wa_row in outlet_df.iterrows():
+
+                    wa_is_paid = (
+                        float(
+                            wa_row["Balance"]
+                        ) <= 0
                     )
 
-                elif selected_wa_bill is None:
+                    wa_dues_days = (
+                        0
+                        if wa_is_paid
+                        else calculate_days_pending(
+                            str(
+                                wa_row["Date"]
+                            )
+                        )
+                    )
 
-                    st.warning(
-                        "No outstanding bill selected."
+                    wa_status = str(
+                        wa_row["Status"]
+                    )
+
+                    msg += (
+                        f"\n🧾 *Bill Code:* "
+                        f"{wa_row['Bill_No']}\n"
+                        f"📅 *Bill Date:* "
+                        f"{wa_row['Date']}\n"
+                        f"👤 *Sales Manager:* "
+                        f"{wa_row['Manager_Name']}\n"
+                        f"💰 *Bill Amount:* "
+                        f"Rs {wa_row['Bill_Amount']:,.2f}\n"
+                        f"🟢 *Paid Amount:* "
+                        f"Rs {wa_row['Paid_Amount']:,.2f}\n"
+                        f"🔴 *Balance Due:* "
+                        f"Rs {wa_row['Balance']:,.2f}\n"
+                        f"📌 *Status:* "
+                        f"{wa_status}\n"
+                        f"⏰ *Dues Days:* "
+                        f"{wa_dues_days} Days\n"
+                        "-----------------------------\n"
+                    )
+
+                # ----------------------------------------------------------
+                # OUTLET TOTAL SUMMARY
+                # ----------------------------------------------------------
+                msg += (
+                    "\n*📊 OUTLET TOTAL SUMMARY*\n"
+                    "-----------------------------------\n"
+                    f"💰 *Total Bill Amount:* "
+                    f"Rs {total_bill_amount:,.2f}\n"
+                    f"🟢 *Total Paid Amount:* "
+                    f"Rs {total_paid_amount:,.2f}\n"
+                    f"🔴 *Total Balance Due:* "
+                    f"Rs {total_balance:,.2f}\n"
+                    "-----------------------------------\n"
+                )
+
+                # ----------------------------------------------------------
+                # PAYMENT STATUS
+                # ----------------------------------------------------------
+                if total_balance <= 0:
+
+                    msg += (
+                        "✅ *All bills are fully paid.*\n"
+                        "Thank you for your payment! 🙏\n"
                     )
 
                 else:
 
-                    # --------------------------------------------------------------
-                    # EXTRA SAFETY:
-                    # PAID BILL MESSAGE NEVER GENERATED
-                    # --------------------------------------------------------------
-                    if float(
-                        selected_wa_bill["Balance"]
-                    ) <= 0:
+                    msg += (
+                        "⚠️ *Payment is pending against this outlet.*\n"
+                        "Please clear the outstanding amount.\n"
+                    )
 
-                        st.error(
-                            "This bill is already PAID. "
-                            "WhatsApp dues message will not be generated."
-                        )
+                # ----------------------------------------------------------
+                # FOOTER
+                # ----------------------------------------------------------
+                msg += (
+                    "-----------------------------------\n"
+                    "*MS MAA VINDHYAWASINI TRADERS*\n"
+                    "Authorized Coca-Cola Distributor"
+                )
 
-                    else:
+                # ----------------------------------------------------------
+                # ENCODE WHATSAPP MESSAGE
+                # ----------------------------------------------------------
+                encoded_msg = urllib.parse.quote(
+                    msg
+                )
 
-                        wa_bill_date = str(
-                            selected_wa_bill["Date"]
-                        )
+                clean_phone = (
+                    wa_phone.strip()
+                    .replace(" ", "")
+                    .replace("-", "")
+                    .replace("+", "")
+                )
 
-                        wa_is_paid = (
-                            float(
-                                selected_wa_bill["Balance"]
-                            ) <= 0
-                        )
+                wa_link = (
+                    "https://api.whatsapp.com/send"
+                    "?phone="
+                    f"{clean_phone}"
+                    f"&text={encoded_msg}"
+                )
 
-                        wa_dues_days = (
-                            0
-                            if wa_is_paid
-                            else calculate_days_pending(
-                                wa_bill_date
-                            )
-                        )
+                # ----------------------------------------------------------
+                # WHATSAPP BUTTON
+                # ----------------------------------------------------------
+                st.markdown(
+                    f"""
+                    <a href="{wa_link}"
+                       target="_blank"
+                       style="
+                           display:inline-block;
+                           background-color:#25D366;
+                           color:white;
+                           padding:12px 20px;
+                           border-radius:8px;
+                           text-decoration:none;
+                           font-weight:bold;
+                           font-size:16px;
+                       ">
+                       💬 Open WhatsApp & Send Outlet Statement
+                    </a>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
-                        wa_status = str(
-                            selected_wa_bill["Status"]
-                        )
-
-                        msg = (
-                            "*🥤 MS MAA VINDHYAWASINI TRADERS*\n"
-                            "*BILL STATEMENT / PAYMENT STATUS*\n"
-                            "-----------------------------------\n"
-                            f"🧾 *Bill Code:* "
-                            f"{selected_wa_bill['Bill_No']}\n"
-                            f"📅 *Bill Date:* "
-                            f"{wa_bill_date}\n"
-                            f"🏪 *Outlet:* "
-                            f"{selected_wa_bill['Outlet_Name']}\n"
-                            f"👤 *Sales Manager:* "
-                            f"{selected_wa_bill['Manager_Name']}\n"
-                            f"💰 *Bill Amount:* "
-                            f"Rs {selected_wa_bill['Bill_Amount']:,.2f}\n"
-                            f"🟢 *Paid Amount:* "
-                            f"Rs {selected_wa_bill['Paid_Amount']:,.2f}\n"
-                            f"🔴 *Balance Due:* "
-                            f"Rs {selected_wa_bill['Balance']:,.2f}\n"
-                            f"📌 *Status:* "
-                            f"{wa_status}\n"
-                            f"⏰ *Dues Days:* "
-                            f"{wa_dues_days} Days\n"
-                            "-----------------------------------\n"
-                            "⚠️ *Payment is pending against this bill.*\n"
-                            "Please clear the outstanding amount.\n"
-                            "-----------------------------------\n"
-                            "*MS MAA VINDHYAWASINI TRADERS*\n"
-                            "Authorized Coca-Cola Distributor"
-                        )
-
-                        encoded_msg = urllib.parse.quote(
-                            msg
-                        )
-
-                        clean_phone = (
-                            wa_phone.strip()
-                            .replace(" ", "")
-                            .replace("-", "")
-                            .replace("+", "")
-                        )
-
-                        wa_link = (
-                            "https://api.whatsapp.com/send"
-                            "?phone="
-                            f"{clean_phone}"
-                            f"&text={encoded_msg}"
-                        )
-
-                        st.markdown(
-                            f"""
-                            <a href="{wa_link}"
-                               target="_blank"
-                               style="
-                                   display:inline-block;
-                                   background-color:#25D366;
-                                   color:white;
-                                   padding:12px 20px;
-                                   border-radius:8px;
-                                   text-decoration:none;
-                                   font-weight:bold;
-                                   font-size:16px;
-                               ">
-                               💬 Open WhatsApp & Send Bill Message
-                            </a>
-                            """,
-                            unsafe_allow_html=True,
-                        )
-
-                        st.success(
-                            "WhatsApp outstanding bill message तैयार है। "
-                            "PAID bill ka message nahi bheja jayega."
-                        )
+                st.success(
+                    "WhatsApp outlet-wise statement तैयार है। "
+                    "Button पर click करके भेज सकते हैं।"
+                )
 
 
 # ------------------------------------------------------------------------------
@@ -2533,6 +2503,7 @@ with tab_payments:
 
         # ----------------------------------------------------------------------
         # WHATSAPP PAYMENT RECEIPT
+        # Written message only
         # ----------------------------------------------------------------------
         st.markdown("---")
 
