@@ -19,13 +19,14 @@ import streamlit as st
 
 
 # ------------------------------------------------------------------------------
-# PAGE CONFIGURATION & CUSTOM STYLES
+# PAGE CONFIGURATION
 # ------------------------------------------------------------------------------
 st.set_page_config(
     page_title="MS MAA VINDHYAWASINI TRADERS (COCA COLA)",
     page_icon="🥤",
     layout="wide",
 )
+
 
 st.markdown(
     """
@@ -74,12 +75,13 @@ st.caption(
 
 
 # ------------------------------------------------------------------------------
-# 1. DATABASE MANAGEMENT
+# DATABASE
 # ------------------------------------------------------------------------------
 DB_FILE = "khatabook_billwise_v6.db"
 
 
 def init_db():
+
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
@@ -131,6 +133,7 @@ def init_db():
 
 
 def get_all_bills():
+
     conn = sqlite3.connect(DB_FILE)
 
     df = pd.read_sql_query(
@@ -139,10 +142,12 @@ def get_all_bills():
     )
 
     conn.close()
+
     return df
 
 
 def get_all_payments():
+
     conn = sqlite3.connect(DB_FILE)
 
     df = pd.read_sql_query(
@@ -151,10 +156,12 @@ def get_all_payments():
     )
 
     conn.close()
+
     return df
 
 
 def get_managers():
+
     conn = sqlite3.connect(DB_FILE)
 
     df = pd.read_sql_query(
@@ -164,16 +171,15 @@ def get_managers():
 
     conn.close()
 
-    return (
-        df["name"].tolist()
-        if not df.empty
-        else ["Default Manager"]
-    )
+    if df.empty:
+        return ["Default Manager"]
+
+    return df["name"].tolist()
 
 
 def get_outlets():
-    conn = sqlite3.connect(DB_FILE)
 
+    conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
     c.execute(
@@ -196,9 +202,10 @@ def get_outlets():
 
 
 # ------------------------------------------------------------------------------
-# AUTO BILL CODE GENERATOR
+# AUTO BILL CODE
 # ------------------------------------------------------------------------------
 def generate_auto_code_backend(outlet_name):
+
     clean_name = (
         "".join(
             e for e in outlet_name
@@ -208,7 +215,7 @@ def generate_auto_code_backend(outlet_name):
         else "BILL"
     )
 
-    if len(clean_name) == 0:
+    if not clean_name:
         clean_name = "BILL"
 
     short_code = clean_name[:5]
@@ -233,7 +240,7 @@ def generate_auto_code_backend(outlet_name):
 
 
 # ------------------------------------------------------------------------------
-# SAVE NEW BILL
+# SAVE BILL
 # ------------------------------------------------------------------------------
 def save_bill_to_db(
     date_str,
@@ -242,6 +249,7 @@ def save_bill_to_db(
     amount,
     note,
 ):
+
     bill_no = generate_auto_code_backend(outlet)
 
     conn = sqlite3.connect(DB_FILE)
@@ -290,7 +298,7 @@ def save_bill_to_db(
 
 
 # ------------------------------------------------------------------------------
-# UPDATE / MODIFY EXISTING BILL
+# UPDATE BILL
 # ------------------------------------------------------------------------------
 def update_bill_in_db(
     bill_no,
@@ -300,6 +308,7 @@ def update_bill_in_db(
     amount,
     note,
 ):
+
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
@@ -315,12 +324,15 @@ def update_bill_in_db(
     row = c.fetchone()
 
     if not row:
+
         conn.close()
+
         return False, "Bill not found."
 
     paid_amount = float(row[0])
 
     if amount < paid_amount:
+
         conn.close()
 
         return (
@@ -332,13 +344,16 @@ def update_bill_in_db(
     balance = amount - paid_amount
 
     if balance <= 0:
+
         status = "🟢 PAID"
         balance = 0.0
 
     elif paid_amount > 0:
+
         status = "🔴 PARTIAL"
 
     else:
+
         status = "🔴 UNPAID"
 
     c.execute(
@@ -388,7 +403,30 @@ def update_bill_in_db(
 
 
 # ------------------------------------------------------------------------------
-# RECORD BILL PAYMENT
+# DAYS PENDING
+# ------------------------------------------------------------------------------
+def calculate_days_pending(bill_date_str):
+
+    try:
+
+        b_date = datetime.strptime(
+            bill_date_str,
+            "%d-%m-%Y",
+        )
+
+        days = (
+            datetime.now() - b_date
+        ).days
+
+        return max(0, days)
+
+    except Exception:
+
+        return 0
+
+
+# ------------------------------------------------------------------------------
+# RECORD PAYMENT
 # ------------------------------------------------------------------------------
 def record_bill_payment(
     bill_no,
@@ -399,6 +437,7 @@ def record_bill_payment(
     mode,
     is_full,
 ):
+
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
@@ -417,11 +456,15 @@ def record_bill_payment(
     row = c.fetchone()
 
     if row:
+
         bill_amt, curr_paid, curr_bal = row
 
         if is_full:
+
             actual_payment = curr_bal
+
         else:
+
             actual_payment = min(
                 paid_amt,
                 curr_bal,
@@ -431,9 +474,12 @@ def record_bill_payment(
         new_bal = bill_amt - new_paid
 
         if new_bal <= 0:
+
             new_status = "🟢 PAID"
             new_bal = 0.0
+
         else:
+
             new_status = "🔴 PARTIAL"
 
         c.execute(
@@ -484,6 +530,7 @@ def record_bill_payment(
 # DELETE BILL
 # ------------------------------------------------------------------------------
 def delete_bill_from_db(bill_no):
+
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
@@ -509,6 +556,7 @@ def delete_payment_from_db(
     bill_no,
     amt,
 ):
+
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
@@ -534,6 +582,7 @@ def delete_payment_from_db(
     row = c.fetchone()
 
     if row:
+
         b_amt, p_amt = row
 
         n_paid = max(
@@ -544,10 +593,15 @@ def delete_payment_from_db(
         n_bal = b_amt - n_paid
 
         if n_bal <= 0:
+
             n_status = "🟢 PAID"
+
         elif n_paid == 0:
+
             n_status = "🔴 UNPAID"
+
         else:
+
             n_status = "🔴 PARTIAL"
 
         c.execute(
@@ -575,9 +629,11 @@ def delete_payment_from_db(
 # SAVE MANAGER
 # ------------------------------------------------------------------------------
 def save_manager_to_db(mgr_str):
+
     clean_mgr = mgr_str.strip().title()
 
     if clean_mgr:
+
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
 
@@ -600,40 +656,22 @@ init_db()
 
 
 # ------------------------------------------------------------------------------
-# DAYS PENDING CALCULATOR
-# ------------------------------------------------------------------------------
-def calculate_days_pending(bill_date_str):
-    try:
-        b_date = datetime.strptime(
-            bill_date_str,
-            "%d-%m-%Y",
-        )
-
-        days = (
-            datetime.now() - b_date
-        ).days
-
-        return max(0, days)
-
-    except Exception:
-        return 0
-
-
-# ------------------------------------------------------------------------------
 # PDF REPORT GENERATOR
-# DUES DAYS ADDED AS SECOND LAST COLUMN
+# DUES DAYS = SECOND LAST
+# PAID ROW = COMPLETE GREEN
 # ------------------------------------------------------------------------------
 def generate_pdf_report(
     df_data,
     subtitle_info="",
 ):
+
     buffer = io.BytesIO()
 
     doc = SimpleDocTemplate(
         buffer,
         pagesize=A4,
-        rightMargin=20,
-        leftMargin=20,
+        rightMargin=18,
+        leftMargin=18,
         topMargin=25,
         bottomMargin=25,
     )
@@ -642,9 +680,6 @@ def generate_pdf_report(
 
     styles = getSampleStyleSheet()
 
-    # --------------------------------------------------------------------------
-    # TITLE STYLE
-    # --------------------------------------------------------------------------
     title_style = ParagraphStyle(
         "DocTitle",
         parent=styles["Heading1"],
@@ -655,9 +690,6 @@ def generate_pdf_report(
         spaceAfter=2,
     )
 
-    # --------------------------------------------------------------------------
-    # SUB TITLE
-    # --------------------------------------------------------------------------
     sub_title_style = ParagraphStyle(
         "DocSubTitle",
         parent=styles["Normal"],
@@ -668,9 +700,6 @@ def generate_pdf_report(
         spaceAfter=8,
     )
 
-    # --------------------------------------------------------------------------
-    # OUTLET TITLE
-    # --------------------------------------------------------------------------
     outlet_style = ParagraphStyle(
         "OutletTitle",
         parent=styles["Normal"],
@@ -681,9 +710,6 @@ def generate_pdf_report(
         spaceAfter=5,
     )
 
-    # --------------------------------------------------------------------------
-    # INFO STYLE
-    # --------------------------------------------------------------------------
     info_style = ParagraphStyle(
         "DocInfo",
         parent=styles["Normal"],
@@ -693,57 +719,42 @@ def generate_pdf_report(
         spaceAfter=10,
     )
 
-    # --------------------------------------------------------------------------
-    # TABLE HEADER
-    # --------------------------------------------------------------------------
     table_hdr_style = ParagraphStyle(
         "TableHdr",
         parent=styles["Normal"],
-        fontSize=7.2,
+        fontSize=7.5,
         leading=9,
         textColor=colors.white,
         fontName="Helvetica-Bold",
         alignment=1,
     )
 
-    # --------------------------------------------------------------------------
-    # TABLE CELL
-    # --------------------------------------------------------------------------
     table_cell_style = ParagraphStyle(
         "TableCell",
         parent=styles["Normal"],
-        fontSize=7.2,
+        fontSize=7.5,
         leading=9,
         textColor=colors.HexColor("#334155"),
     )
 
-    # --------------------------------------------------------------------------
-    # RED STATUS
-    # --------------------------------------------------------------------------
     red_status_style = ParagraphStyle(
         "RedStatus",
         parent=table_cell_style,
         textColor=colors.HexColor("#DC2626"),
         fontName="Helvetica-Bold",
-        fontSize=7.2,
+        fontSize=7.5,
         leading=9,
     )
 
-    # --------------------------------------------------------------------------
-    # GREEN STATUS
-    # --------------------------------------------------------------------------
     green_status_style = ParagraphStyle(
         "GreenStatus",
         parent=table_cell_style,
-        textColor=colors.HexColor("#16A34A"),
+        textColor=colors.HexColor("#166534"),
         fontName="Helvetica-Bold",
-        fontSize=7.2,
+        fontSize=7.5,
         leading=9,
     )
 
-    # --------------------------------------------------------------------------
-    # RED BALANCE
-    # --------------------------------------------------------------------------
     red_balance_style = ParagraphStyle(
         "RedBalance",
         parent=table_cell_style,
@@ -751,9 +762,6 @@ def generate_pdf_report(
         fontName="Helvetica-Bold",
     )
 
-    # --------------------------------------------------------------------------
-    # GREEN PAID AMOUNT
-    # --------------------------------------------------------------------------
     green_amount_style = ParagraphStyle(
         "GreenAmount",
         parent=table_cell_style,
@@ -761,9 +769,6 @@ def generate_pdf_report(
         fontName="Helvetica-Bold",
     )
 
-    # --------------------------------------------------------------------------
-    # TOTAL DUES
-    # --------------------------------------------------------------------------
     total_dues_style = ParagraphStyle(
         "TotalDues",
         parent=styles["Normal"],
@@ -794,22 +799,27 @@ def generate_pdf_report(
     )
 
     # --------------------------------------------------------------------------
-    # OUTLET NAME
+    # OUTLET
     # --------------------------------------------------------------------------
     outlet_name_for_pdf = ""
 
     if "Outlet:" in subtitle_info:
+
         try:
+
             outlet_name_for_pdf = (
                 subtitle_info
                 .split("Outlet:", 1)[1]
                 .split("|", 1)[0]
                 .strip()
             )
+
         except Exception:
+
             outlet_name_for_pdf = ""
 
     if not outlet_name_for_pdf:
+
         outlet_name_for_pdf = "All Outlets"
 
     elements.append(
@@ -820,7 +830,7 @@ def generate_pdf_report(
     )
 
     # --------------------------------------------------------------------------
-    # STATEMENT INFO
+    # INFO
     # --------------------------------------------------------------------------
     elements.append(
         Paragraph(
@@ -831,9 +841,6 @@ def generate_pdf_report(
         )
     )
 
-    # --------------------------------------------------------------------------
-    # RED LINE
-    # --------------------------------------------------------------------------
     elements.append(
         HRFlowable(
             width="100%",
@@ -844,8 +851,8 @@ def generate_pdf_report(
     )
 
     # --------------------------------------------------------------------------
-    # PDF TABLE HEADERS
-    # DUES DAYS = SECOND LAST
+    # HEADERS
+    # DUES DAYS SECOND LAST
     # --------------------------------------------------------------------------
     headers = [
         "Bill Code",
@@ -875,11 +882,25 @@ def generate_pdf_report(
 
         status = str(row["Status"])
 
-        # PAID = GREEN
-        # UNPAID / PARTIAL = RED
-        if "PAID" in status and "UNPAID" not in status:
+        is_paid = float(row["Balance"]) <= 0
+
+        days_pending = (
+            0
+            if is_paid
+            else calculate_days_pending(
+                str(row["Date"])
+            )
+        )
+
+        if (
+            "PAID" in status
+            and "UNPAID" not in status
+        ):
+
             status_style = green_status_style
+
         else:
+
             status_style = red_status_style
 
         status_text = Paragraph(
@@ -887,33 +908,19 @@ def generate_pdf_report(
             status_style,
         )
 
-        # ----------------------------------------------------------------------
-        # DUES DAYS
-        # PAID = 0
-        # UNPAID / PARTIAL = ACTUAL DAYS
-        # ----------------------------------------------------------------------
         if float(row["Balance"]) > 0:
-            dues_days = calculate_days_pending(
-                str(row["Date"])
-            )
-        else:
-            dues_days = 0
 
-        # ----------------------------------------------------------------------
-        # BALANCE COLOR
-        # ----------------------------------------------------------------------
-        if float(row["Balance"]) > 0:
             balance_style = red_balance_style
+
         else:
+
             balance_style = green_status_style
 
-        # ----------------------------------------------------------------------
-        # DUES DAYS COLOR
-        # ----------------------------------------------------------------------
-        if dues_days > 0:
-            dues_days_style = red_status_style
-        else:
-            dues_days_style = green_status_style
+        dues_style = (
+            green_status_style
+            if is_paid
+            else red_status_style
+        )
 
         table_data.append(
             [
@@ -950,8 +957,8 @@ def generate_pdf_report(
                 status_text,
 
                 Paragraph(
-                    f"{dues_days} Days",
-                    dues_days_style,
+                    f"{days_pending} Days",
+                    dues_style,
                 ),
             ]
         )
@@ -962,81 +969,101 @@ def generate_pdf_report(
     t = Table(
         table_data,
         colWidths=[
-            65,   # Bill Code
-            55,   # Date
-            105,  # Outlet
-            65,   # Bill Amount
-            65,   # Paid Amount
-            65,   # Balance
-            65,   # Status
-            55,   # Dues Days
+            63,
+            53,
+            105,
+            63,
+            63,
+            65,
+            63,
+            55,
         ],
         repeatRows=1,
     )
 
+    table_style_commands = [
+        (
+            "BACKGROUND",
+            (0, 0),
+            (-1, 0),
+            colors.HexColor("#1E293B"),
+        ),
+
+        (
+            "ALIGN",
+            (0, 0),
+            (-1, 0),
+            "CENTER",
+        ),
+
+        (
+            "ALIGN",
+            (0, 1),
+            (-1, -1),
+            "LEFT",
+        ),
+
+        (
+            "VALIGN",
+            (0, 0),
+            (-1, -1),
+            "MIDDLE",
+        ),
+
+        (
+            "GRID",
+            (0, 0),
+            (-1, -1),
+            0.5,
+            colors.HexColor("#CBD5E1"),
+        ),
+
+        (
+            "BACKGROUND",
+            (0, 1),
+            (-1, -1),
+            colors.white,
+        ),
+
+        (
+            "PADDING",
+            (0, 0),
+            (-1, -1),
+            4,
+        ),
+    ]
+
+    # --------------------------------------------------------------------------
+    # PAID = COMPLETE ROW GREEN
+    # --------------------------------------------------------------------------
+    for pdf_row_index, (_, pdf_row) in enumerate(
+        df_data.iterrows(),
+        start=1,
+    ):
+
+        if float(pdf_row["Balance"]) <= 0:
+
+            table_style_commands.extend(
+                [
+                    (
+                        "BACKGROUND",
+                        (0, pdf_row_index),
+                        (-1, pdf_row_index),
+                        colors.HexColor("#DCFCE7"),
+                    ),
+
+                    (
+                        "TEXTCOLOR",
+                        (0, pdf_row_index),
+                        (-1, pdf_row_index),
+                        colors.HexColor("#166534"),
+                    ),
+                ]
+            )
+
     t.setStyle(
         TableStyle(
-            [
-                (
-                    "BACKGROUND",
-                    (0, 0),
-                    (-1, 0),
-                    colors.HexColor("#1E293B"),
-                ),
-
-                (
-                    "ALIGN",
-                    (0, 0),
-                    (-1, 0),
-                    "CENTER",
-                ),
-
-                (
-                    "ALIGN",
-                    (0, 1),
-                    (-1, -1),
-                    "LEFT",
-                ),
-
-                (
-                    "ALIGN",
-                    (-1, 1),
-                    (-1, -1),
-                    "CENTER",
-                ),
-
-                (
-                    "VALIGN",
-                    (0, 0),
-                    (-1, -1),
-                    "MIDDLE",
-                ),
-
-                (
-                    "GRID",
-                    (0, 0),
-                    (-1, -1),
-                    0.5,
-                    colors.HexColor("#CBD5E1"),
-                ),
-
-                (
-                    "ROWBACKGROUNDS",
-                    (0, 1),
-                    (-1, -1),
-                    [
-                        colors.white,
-                        colors.HexColor("#F8FAFC"),
-                    ],
-                ),
-
-                (
-                    "PADDING",
-                    (0, 0),
-                    (-1, -1),
-                    4,
-                ),
-            ]
+            table_style_commands
         )
     )
 
@@ -1066,9 +1093,6 @@ def generate_pdf_report(
         )
     )
 
-    # --------------------------------------------------------------------------
-    # FOOTER
-    # --------------------------------------------------------------------------
     footer_style = ParagraphStyle(
         "Footer",
         parent=styles["Normal"],
@@ -1086,9 +1110,6 @@ def generate_pdf_report(
         )
     )
 
-    # --------------------------------------------------------------------------
-    # BUILD PDF
-    # --------------------------------------------------------------------------
     doc.build(elements)
 
     buffer.seek(0)
@@ -1106,7 +1127,7 @@ payments_df = get_all_payments()
 
 
 # ------------------------------------------------------------------------------
-# 2. SIDEBAR SETUP
+# SIDEBAR
 # ------------------------------------------------------------------------------
 with st.sidebar:
 
@@ -1160,7 +1181,7 @@ with st.sidebar:
 
 
 # ------------------------------------------------------------------------------
-# 3. TRANSACTIONS ENTRY SECTION
+# TRANSACTION SECTION
 # ------------------------------------------------------------------------------
 st.markdown("---")
 
@@ -1168,7 +1189,7 @@ col_left, col_right = st.columns(2)
 
 
 # ------------------------------------------------------------------------------
-# CREATE NEW BILL
+# CREATE BILL
 # ------------------------------------------------------------------------------
 with col_left:
 
@@ -1479,7 +1500,7 @@ with col_right:
 
 
 # ------------------------------------------------------------------------------
-# 4. DASHBOARD & TABS
+# DASHBOARD
 # ------------------------------------------------------------------------------
 st.markdown("---")
 
@@ -1496,7 +1517,7 @@ tab_bills, tab_payments = st.tabs(
 
 
 # ------------------------------------------------------------------------------
-# TAB 1: ALL BILLS
+# TAB 1 - BILLS
 # ------------------------------------------------------------------------------
 with tab_bills:
 
@@ -1563,9 +1584,6 @@ with tab_bills:
                 == selected_outlet_filter
             ]
 
-        # ----------------------------------------------------------------------
-        # TOTAL NET DUES
-        # ----------------------------------------------------------------------
         tot_due = df_view["Balance"].sum()
 
         st.metric(
@@ -1578,7 +1596,7 @@ with tab_bills:
         )
 
         # ----------------------------------------------------------------------
-        # TABLE HEADER
+        # BILL TABLE HEADER
         # DUES DAYS SECOND LAST
         # ----------------------------------------------------------------------
         (
@@ -1711,7 +1729,6 @@ with tab_bills:
                         "**🔴 UNPAID**"
                     )
 
-                # DUES DAYS - SECOND LAST
                 if not is_paid:
 
                     c9.markdown(
@@ -1992,13 +2009,9 @@ with tab_bills:
                             st.rerun()
 
         # ----------------------------------------------------------------------
-        # PDF EXPORT + WHATSAPP
+        # PDF EXPORT
         # ----------------------------------------------------------------------
         st.markdown("---")
-
-        st.markdown(
-            "### 📄 PDF Statement Export"
-        )
 
         rep_sub = (
             f"Outlet: {selected_outlet_filter} | "
@@ -2010,105 +2023,185 @@ with tab_bills:
             subtitle_info=rep_sub,
         )
 
-        pdf_file_name = (
-            f"Bill_Statement_"
-            f"{selected_outlet_filter}_"
-            f"{datetime.now().strftime('%d%m%Y')}.pdf"
+        st.download_button(
+            label="📄 Download Bills PDF Statement",
+            data=pdf_bytes,
+            file_name=(
+                f"Bill_Statement_"
+                f"{selected_outlet_filter}_"
+                f"{datetime.now().strftime('%d%m%Y')}.pdf"
+            ),
+            mime="application/pdf",
         )
 
         # ----------------------------------------------------------------------
-        # PDF DOWNLOAD
+        # WHATSAPP BILL-WISE WRITTEN MESSAGE
+        # PDF ATTACHMENT REMOVED
         # ----------------------------------------------------------------------
-        pdf_download_col, whatsapp_col = st.columns(2)
+        st.markdown("---")
 
-        with pdf_download_col:
+        st.markdown(
+            "#### 📲 Bill-wise WhatsApp Message"
+        )
 
-            st.download_button(
-                label="📄 Download Bills PDF Statement",
-                data=pdf_bytes,
-                file_name=pdf_file_name,
-                mime="application/pdf",
-                use_container_width=True,
+        wa_bill_col1, wa_bill_col2 = st.columns(2)
+
+        with wa_bill_col1:
+
+            wa_bill_options = {}
+
+            for _, wa_row in df_view.iterrows():
+
+                wa_bill_options[
+                    f"{wa_row['Bill_No']} | "
+                    f"{wa_row['Outlet_Name']} | "
+                    f"Balance: Rs {wa_row['Balance']:,.2f}"
+                ] = wa_row
+
+            selected_wa_bill_label = st.selectbox(
+                "Select Bill for WhatsApp Message:",
+                list(wa_bill_options.keys()),
+                key="wa_bill_select",
             )
 
-        # ----------------------------------------------------------------------
-        # WHATSAPP PDF SHARE
-        # ----------------------------------------------------------------------
-        with whatsapp_col:
+            selected_wa_bill = wa_bill_options[
+                selected_wa_bill_label
+            ]
 
-            whatsapp_phone = st.text_input(
-                "📱 Customer WhatsApp Number",
+        with wa_bill_col2:
+
+            wa_phone = st.text_input(
+                "Customer Mobile No.",
                 placeholder="91XXXXXXXXXX",
-                key="pdf_whatsapp_phone",
+                key="wa_bill_phone",
             )
 
-            whatsapp_message = (
-                "🥤 MS MAA VINDHYAWASINI TRADERS\n\n"
-                "*BILL STATEMENT PDF*\n"
-                f"🏪 Outlet: {selected_outlet_filter}\n"
-                f"👤 Manager: {selected_mgr_filter}\n"
-                f"💰 Total Net Dues: "
-                f"Rs {df_view['Balance'].sum():,.2f}\n\n"
-                "Please find the Bill Statement PDF attached.\n"
-                "Thank you!"
-            )
+        if st.button(
+            "💬 Generate Bill-wise WhatsApp Message",
+            use_container_width=True,
+        ):
 
-            encoded_wa_message = urllib.parse.quote(
-                whatsapp_message
-            )
+            if not wa_phone.strip():
 
-            if whatsapp_phone.strip():
-
-                clean_phone = (
-                    whatsapp_phone
-                    .strip()
-                    .replace("+", "")
-                    .replace(" ", "")
-                    .replace("-", "")
+                st.warning(
+                    "Please enter customer mobile number."
                 )
 
-                wa_url = (
-                    "https://wa.me/"
+            else:
+
+                wa_bill_date = str(
+                    selected_wa_bill["Date"]
+                )
+
+                wa_is_paid = (
+                    float(
+                        selected_wa_bill["Balance"]
+                    ) <= 0
+                )
+
+                wa_dues_days = (
+                    0
+                    if wa_is_paid
+                    else calculate_days_pending(
+                        wa_bill_date
+                    )
+                )
+
+                wa_status = str(
+                    selected_wa_bill["Status"]
+                )
+
+                msg = (
+                    "*🥤 MS MAA VINDHYAWASINI TRADERS*\n"
+                    "*BILL STATEMENT / PAYMENT STATUS*\n"
+                    "-----------------------------------\n"
+                    f"🧾 *Bill Code:* "
+                    f"{selected_wa_bill['Bill_No']}\n"
+                    f"📅 *Bill Date:* "
+                    f"{wa_bill_date}\n"
+                    f"🏪 *Outlet:* "
+                    f"{selected_wa_bill['Outlet_Name']}\n"
+                    f"👤 *Sales Manager:* "
+                    f"{selected_wa_bill['Manager_Name']}\n"
+                    f"💰 *Bill Amount:* "
+                    f"Rs {selected_wa_bill['Bill_Amount']:,.2f}\n"
+                    f"🟢 *Paid Amount:* "
+                    f"Rs {selected_wa_bill['Paid_Amount']:,.2f}\n"
+                    f"🔴 *Balance Due:* "
+                    f"Rs {selected_wa_bill['Balance']:,.2f}\n"
+                    f"📌 *Status:* "
+                    f"{wa_status}\n"
+                    f"⏰ *Dues Days:* "
+                    f"{wa_dues_days} Days\n"
+                    "-----------------------------------\n"
+                )
+
+                if wa_is_paid:
+
+                    msg += (
+                        "✅ *This bill has been fully paid.*\n"
+                        "Thank you for your payment! 🙏\n"
+                    )
+
+                else:
+
+                    msg += (
+                        "⚠️ *Payment is pending against this bill.*\n"
+                        "Please clear the outstanding amount.\n"
+                    )
+
+                msg += (
+                    "-----------------------------------\n"
+                    "*MS MAA VINDHYAWASINI TRADERS*\n"
+                    "Authorized Coca-Cola Distributor"
+                )
+
+                encoded_msg = urllib.parse.quote(
+                    msg
+                )
+
+                clean_phone = (
+                    wa_phone.strip()
+                    .replace(" ", "")
+                    .replace("-", "")
+                    .replace("+", "")
+                )
+
+                wa_link = (
+                    "https://api.whatsapp.com/send"
+                    "?phone="
                     f"{clean_phone}"
-                    f"?text={encoded_wa_message}"
+                    f"&text={encoded_msg}"
                 )
 
                 st.markdown(
                     f"""
-                    <a href="{wa_url}"
+                    <a href="{wa_link}"
                        target="_blank"
                        style="
-                       display:block;
-                       text-align:center;
-                       background-color:#25D366;
-                       color:white;
-                       padding:11px;
-                       border-radius:7px;
-                       text-decoration:none;
-                       font-weight:bold;
-                       margin-top:8px;
+                           display:inline-block;
+                           background-color:#25D366;
+                           color:white;
+                           padding:12px 20px;
+                           border-radius:8px;
+                           text-decoration:none;
+                           font-weight:bold;
+                           font-size:16px;
                        ">
-                       📲 Open WhatsApp & Send PDF
+                       💬 Open WhatsApp & Send Bill Message
                     </a>
                     """,
                     unsafe_allow_html=True,
                 )
 
-                st.caption(
-                    "WhatsApp खुलने के बाद downloaded PDF को "
-                    "📎 Document के रूप में attach करके भेजें।"
-                )
-
-            else:
-
-                st.info(
-                    "पहले WhatsApp number डालें, "
-                    "फिर WhatsApp button दबाएँ।"
+                st.success(
+                    "WhatsApp message तैयार है। "
+                    "Button पर click करके भेज सकते हैं।"
                 )
 
 
 # ------------------------------------------------------------------------------
-# TAB 2: PAYMENTS HISTORY
+# TAB 2 - PAYMENTS HISTORY
 # ------------------------------------------------------------------------------
 with tab_payments:
 
@@ -2302,7 +2395,8 @@ with tab_payments:
                             st.rerun()
 
         # ----------------------------------------------------------------------
-        # WHATSAPP RECEIPT
+        # WHATSAPP PAYMENT RECEIPT
+        # Written message only
         # ----------------------------------------------------------------------
         st.markdown("---")
 
@@ -2332,66 +2426,60 @@ with tab_payments:
 
                     msg = (
                         "*🥤 MS MAA VINDHYAWASINI TRADERS*\n"
-                    )
-
-                    msg += (
-                        "*PAYMENT RECEIPT "
-                        "(भुगतान रसीद)*\n"
-                    )
-
-                    msg += (
+                        "*PAYMENT RECEIPT (भुगतान रसीद)*\n"
                         "-----------------------------------\n"
-                    )
-
-                    msg += (
                         f"👤 *Store Name:* "
                         f"{latest_pay['Outlet_Name']}\n"
-                    )
-
-                    msg += (
                         f"🧾 *Bill Code:* "
                         f"{latest_pay['Bill_No']}\n"
-                    )
-
-                    msg += (
                         f"📅 *Payment Date:* "
                         f"{latest_pay['Date']}\n"
-                    )
-
-                    msg += (
                         f"🟢 *AMOUNT RECEIVED:* "
                         f"Rs "
                         f"{latest_pay['Amount_Paid']:,.2f}\n"
-                    )
-
-                    msg += (
                         f"💳 *Payment Mode:* "
                         f"{latest_pay['Payment_Mode']}\n"
-                    )
-
-                    msg += (
                         "-----------------------------------\n"
-                    )
-
-                    msg += (
                         "Thank you for your payment! "
                         "(धन्यवाद!)\n"
                     )
 
-                    encoded_msg = (
-                        urllib.parse.quote(msg)
+                    encoded_msg = urllib.parse.quote(
+                        msg
+                    )
+
+                    clean_phone = (
+                        rec_wa_phone.strip()
+                        .replace(" ", "")
+                        .replace("-", "")
+                        .replace("+", "")
                     )
 
                     wa_link = (
                         "https://api.whatsapp.com/send"
                         "?phone="
-                        f"{rec_wa_phone.strip()}"
+                        f"{clean_phone}"
                         f"&text={encoded_msg}"
                     )
 
                     st.markdown(
-                        f"[👉 Click Here to Send Payment "
-                        f"Receipt on WhatsApp]({wa_link})"
+                        f"""
+                        <a href="{wa_link}"
+                           target="_blank"
+                           style="
+                               display:inline-block;
+                               background-color:#25D366;
+                               color:white;
+                               padding:12px 20px;
+                               border-radius:8px;
+                               text-decoration:none;
+                               font-weight:bold;
+                               font-size:16px;
+                           ">
+                           💬 Open WhatsApp & Send Payment Receipt
+                        </a>
+                        """,
+                        unsafe_allow_html=True,
                     )
 
                 else:
