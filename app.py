@@ -28,9 +28,13 @@ st.set_page_config(
 )
 
 
+# ------------------------------------------------------------------------------
+# GLOBAL CSS
+# ------------------------------------------------------------------------------
 st.markdown(
     """
     <style>
+
     .red-card {
         background-color: #FFEBEB;
         border-left: 6px solid #D9534F;
@@ -62,13 +66,131 @@ st.markdown(
         border-radius: 8px;
         margin-bottom: 10px;
     }
+
+    /* ------------------------------------------------------------------
+       PROFESSIONAL LEDGER
+       ------------------------------------------------------------------ */
+
+    .ledger-header {
+        background: #172033;
+        color: white;
+        font-weight: 700;
+        padding: 10px 5px;
+        border-top: 1px solid #CBD5E1;
+        border-left: 1px solid #CBD5E1;
+        border-bottom: 1px solid #CBD5E1;
+        text-align: center;
+        font-size: 12px;
+        min-height: 42px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .ledger-header-last {
+        border-right: 1px solid #CBD5E1;
+    }
+
+    .ledger-cell {
+        padding: 8px 5px;
+        border-left: 1px solid #D5DCE5;
+        border-bottom: 1px solid #D5DCE5;
+        font-size: 12px;
+        min-height: 42px;
+        display: flex;
+        align-items: center;
+    }
+
+    .ledger-cell-last {
+        border-right: 1px solid #D5DCE5;
+    }
+
+    .ledger-row-paid {
+        background: #F0FDF4;
+    }
+
+    .ledger-row-unpaid {
+        background: #FFF7F7;
+    }
+
+    .ledger-row-partial {
+        background: #FFFBEA;
+    }
+
+    .ledger-bill {
+        color: #1D4ED8;
+        font-weight: 800;
+    }
+
+    .ledger-money {
+        color: #334155;
+        font-weight: 600;
+    }
+
+    .ledger-paid {
+        color: #16A34A;
+        font-weight: 800;
+    }
+
+    .ledger-balance {
+        color: #DC2626;
+        font-weight: 800;
+    }
+
+    .ledger-balance-zero {
+        color: #16A34A;
+        font-weight: 800;
+    }
+
+    .ledger-status-paid {
+        color: #15803D;
+        font-weight: 800;
+    }
+
+    .ledger-status-partial {
+        color: #B45309;
+        font-weight: 800;
+    }
+
+    .ledger-status-unpaid {
+        color: #DC2626;
+        font-weight: 800;
+    }
+
+    .ledger-days {
+        color: #DC2626;
+        font-weight: 800;
+    }
+
+    .ledger-days-paid {
+        color: #16A34A;
+        font-weight: 800;
+    }
+
+    .ledger-title {
+        color: #1E293B;
+        font-size: 18px;
+        font-weight: 800;
+        margin-bottom: 8px;
+    }
+
+    /* Better button appearance */
+    div.stButton > button {
+        border-radius: 6px;
+        font-weight: 600;
+    }
+
     </style>
     """,
     unsafe_allow_html=True,
 )
 
 
+# ------------------------------------------------------------------------------
+# TITLE
+# ------------------------------------------------------------------------------
 st.title("🥤 MS MAA VINDHYAWASINI TRADERS (COCA COLA)")
+
 st.caption(
     "Bill-Wise Ledger System - Auto Generated Bill Code (NAME + SERIAL NO)"
 )
@@ -657,8 +779,6 @@ init_db()
 
 # ------------------------------------------------------------------------------
 # PDF REPORT GENERATOR
-# DUES DAYS = SECOND LAST
-# PAID ROW = COMPLETE GREEN
 # ------------------------------------------------------------------------------
 def generate_pdf_report(
     df_data,
@@ -742,8 +862,6 @@ def generate_pdf_report(
         parent=table_cell_style,
         textColor=colors.HexColor("#DC2626"),
         fontName="Helvetica-Bold",
-        fontSize=7.5,
-        leading=9,
     )
 
     green_status_style = ParagraphStyle(
@@ -751,8 +869,6 @@ def generate_pdf_report(
         parent=table_cell_style,
         textColor=colors.HexColor("#166534"),
         fontName="Helvetica-Bold",
-        fontSize=7.5,
-        leading=9,
     )
 
     red_balance_style = ParagraphStyle(
@@ -781,9 +897,6 @@ def generate_pdf_report(
         spaceAfter=5,
     )
 
-    # --------------------------------------------------------------------------
-    # HEADER
-    # --------------------------------------------------------------------------
     elements.append(
         Paragraph(
             "🥤 MS MAA VINDHYAWASINI TRADERS",
@@ -798,9 +911,6 @@ def generate_pdf_report(
         )
     )
 
-    # --------------------------------------------------------------------------
-    # OUTLET
-    # --------------------------------------------------------------------------
     outlet_name_for_pdf = ""
 
     if "Outlet:" in subtitle_info:
@@ -829,9 +939,6 @@ def generate_pdf_report(
         )
     )
 
-    # --------------------------------------------------------------------------
-    # INFO
-    # --------------------------------------------------------------------------
     elements.append(
         Paragraph(
             f"<b>Statement Info:</b> {subtitle_info} | "
@@ -850,10 +957,6 @@ def generate_pdf_report(
         )
     )
 
-    # --------------------------------------------------------------------------
-    # HEADERS
-    # DUES DAYS SECOND LAST
-    # --------------------------------------------------------------------------
     headers = [
         "Bill Code",
         "Date",
@@ -867,17 +970,11 @@ def generate_pdf_report(
 
     table_data = [
         [
-            Paragraph(
-                h,
-                table_hdr_style,
-            )
+            Paragraph(h, table_hdr_style)
             for h in headers
         ]
     ]
 
-    # --------------------------------------------------------------------------
-    # TABLE DATA
-    # --------------------------------------------------------------------------
     for _, row in df_data.iterrows():
 
         status = str(row["Status"])
@@ -908,13 +1005,11 @@ def generate_pdf_report(
             status_style,
         )
 
-        if float(row["Balance"]) > 0:
-
-            balance_style = red_balance_style
-
-        else:
-
-            balance_style = green_status_style
+        balance_style = (
+            green_status_style
+            if is_paid
+            else red_balance_style
+        )
 
         dues_style = (
             green_status_style
@@ -928,34 +1023,27 @@ def generate_pdf_report(
                     str(row["Bill_No"]),
                     table_cell_style,
                 ),
-
                 Paragraph(
                     str(row["Date"]),
                     table_cell_style,
                 ),
-
                 Paragraph(
                     str(row["Outlet_Name"]),
                     table_cell_style,
                 ),
-
                 Paragraph(
                     f"Rs {row['Bill_Amount']:,.2f}",
                     table_cell_style,
                 ),
-
                 Paragraph(
                     f"Rs {row['Paid_Amount']:,.2f}",
                     green_amount_style,
                 ),
-
                 Paragraph(
                     f"Rs {row['Balance']:,.2f}",
                     balance_style,
                 ),
-
                 status_text,
-
                 Paragraph(
                     f"{days_pending} Days",
                     dues_style,
@@ -963,9 +1051,6 @@ def generate_pdf_report(
             ]
         )
 
-    # --------------------------------------------------------------------------
-    # TABLE
-    # --------------------------------------------------------------------------
     t = Table(
         table_data,
         colWidths=[
@@ -988,28 +1073,18 @@ def generate_pdf_report(
             (-1, 0),
             colors.HexColor("#1E293B"),
         ),
-
         (
             "ALIGN",
             (0, 0),
             (-1, 0),
             "CENTER",
         ),
-
-        (
-            "ALIGN",
-            (0, 1),
-            (-1, -1),
-            "LEFT",
-        ),
-
         (
             "VALIGN",
             (0, 0),
             (-1, -1),
             "MIDDLE",
         ),
-
         (
             "GRID",
             (0, 0),
@@ -1017,14 +1092,12 @@ def generate_pdf_report(
             0.5,
             colors.HexColor("#CBD5E1"),
         ),
-
         (
             "BACKGROUND",
             (0, 1),
             (-1, -1),
             colors.white,
         ),
-
         (
             "PADDING",
             (0, 0),
@@ -1033,9 +1106,6 @@ def generate_pdf_report(
         ),
     ]
 
-    # --------------------------------------------------------------------------
-    # PAID = COMPLETE ROW GREEN
-    # --------------------------------------------------------------------------
     for pdf_row_index, (_, pdf_row) in enumerate(
         df_data.iterrows(),
         start=1,
@@ -1051,7 +1121,6 @@ def generate_pdf_report(
                         (-1, pdf_row_index),
                         colors.HexColor("#DCFCE7"),
                     ),
-
                     (
                         "TEXTCOLOR",
                         (0, pdf_row_index),
@@ -1062,16 +1131,11 @@ def generate_pdf_report(
             )
 
     t.setStyle(
-        TableStyle(
-            table_style_commands
-        )
+        TableStyle(table_style_commands)
     )
 
     elements.append(t)
 
-    # --------------------------------------------------------------------------
-    # TOTAL NET DUES
-    # --------------------------------------------------------------------------
     total_net_dues = float(
         df_data["Balance"].sum()
     )
@@ -1516,9 +1580,9 @@ tab_bills, tab_payments = st.tabs(
 )
 
 
-# ------------------------------------------------------------------------------
+# ==============================================================================
 # TAB 1 - BILLS
-# ------------------------------------------------------------------------------
+# ==============================================================================
 with tab_bills:
 
     if bills_df.empty:
@@ -1529,6 +1593,9 @@ with tab_bills:
 
     else:
 
+        # ----------------------------------------------------------------------
+        # FILTERS
+        # ----------------------------------------------------------------------
         f_col1, f_col2 = st.columns(2)
 
         with f_col1:
@@ -1568,6 +1635,9 @@ with tab_bills:
                 key="filter_outlet_tab1",
             )
 
+        # ----------------------------------------------------------------------
+        # FILTER DATA
+        # ----------------------------------------------------------------------
         df_view = bills_df.copy()
 
         if selected_mgr_filter != "All Managers":
@@ -1591,59 +1661,101 @@ with tab_bills:
             f"Rs {tot_due:,.2f}",
         )
 
+        # ======================================================================
+        # PROFESSIONAL DETAILED BILLS LEDGER
+        # ======================================================================
         st.markdown(
-            "#### 📋 Detailed Bills"
+            '<div class="ledger-title">📋 Detailed Bills Ledger</div>',
+            unsafe_allow_html=True,
         )
 
         # ----------------------------------------------------------------------
-        # BILL TABLE HEADER
-        # DUES DAYS SECOND LAST
+        # TABLE HEADER
         # ----------------------------------------------------------------------
         (
-            h_col1,
-            h_col2,
-            h_col3,
-            h_col4,
-            h_col5,
-            h_col6,
-            h_col7,
-            h_col8,
-            h_col9,
-            h_col10,
-            h_col11,
+            th1,
+            th2,
+            th3,
+            th4,
+            th5,
+            th6,
+            th7,
+            th8,
+            th9,
+            th10,
+            th11,
         ) = st.columns(
             [
-                1.0,
-                0.9,
-                1.2,
-                1.0,
-                1.0,
-                1.0,
-                1.0,
-                1.0,
-                1.0,
-                0.7,
-                0.7,
-            ]
+                1.05,
+                0.85,
+                1.35,
+                1.05,
+                1.05,
+                1.05,
+                1.05,
+                1.05,
+                0.95,
+                0.55,
+                0.60,
+            ],
+            gap="small",
         )
 
-        h_col1.write("**Bill Code**")
-        h_col2.write("**Date**")
-        h_col3.write("**Outlet**")
-        h_col4.write("**Manager**")
-        h_col5.write("**Bill Amt**")
-        h_col6.write("**Paid Amt**")
-        h_col7.write("**Balance**")
-        h_col8.write("**Status**")
-        h_col9.write("**⏰ Dues Days**")
-        h_col10.write("**Edit**")
-        h_col11.write("**Delete**")
+        headers = [
+            "🧾 Bill Code",
+            "📅 Date",
+            "🏪 Outlet",
+            "👤 Manager",
+            "💰 Bill Amt",
+            "🟢 Paid",
+            "🔴 Balance",
+            "📌 Status",
+            "⏰ Dues Days",
+            "✏️",
+            "🗑️",
+        ]
 
-        st.divider()
+        header_cols = [
+            th1,
+            th2,
+            th3,
+            th4,
+            th5,
+            th6,
+            th7,
+            th8,
+            th9,
+            th10,
+            th11,
+        ]
 
+        for i, (col, header) in enumerate(
+            zip(header_cols, headers)
+        ):
+
+            with col:
+
+                last_class = (
+                    "ledger-header-last"
+                    if i == len(headers) - 1
+                    else ""
+                )
+
+                st.markdown(
+                    f"""
+                    <div class="ledger-header {last_class}">
+                        {header}
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+        # ----------------------------------------------------------------------
+        # LEDGER ROWS
+        # ----------------------------------------------------------------------
         for idx, row in df_view.iterrows():
 
-            is_paid = row["Balance"] <= 0
+            is_paid = float(row["Balance"]) <= 0
 
             days_p = (
                 calculate_days_pending(
@@ -1653,98 +1765,236 @@ with tab_bills:
                 else 0
             )
 
-            with st.container():
+            status = str(row["Status"])
 
-                (
-                    c1,
-                    c2,
-                    c3,
-                    c4,
-                    c5,
-                    c6,
-                    c7,
-                    c8,
-                    c9,
-                    c10,
-                    c11,
-                ) = st.columns(
-                    [
-                        1.0,
-                        0.9,
-                        1.2,
-                        1.0,
-                        1.0,
-                        1.0,
-                        1.0,
-                        1.0,
-                        1.0,
-                        0.7,
-                        0.7,
-                    ]
+            if status == "🟢 PAID":
+
+                row_class = "ledger-row-paid"
+                status_class = "ledger-status-paid"
+                status_text = "🟢 PAID"
+
+            elif status == "🔴 PARTIAL":
+
+                row_class = "ledger-row-partial"
+                status_class = "ledger-status-partial"
+                status_text = "🔴 PARTIAL"
+
+            else:
+
+                row_class = "ledger-row-unpaid"
+                status_class = "ledger-status-unpaid"
+                status_text = "🔴 UNPAID"
+
+            # ------------------------------------------------------------------
+            # COLUMNS
+            # ------------------------------------------------------------------
+            (
+                c1,
+                c2,
+                c3,
+                c4,
+                c5,
+                c6,
+                c7,
+                c8,
+                c9,
+                c10,
+                c11,
+            ) = st.columns(
+                [
+                    1.05,
+                    0.85,
+                    1.35,
+                    1.05,
+                    1.05,
+                    1.05,
+                    1.05,
+                    1.05,
+                    0.95,
+                    0.55,
+                    0.60,
+                ],
+                gap="small",
+            )
+
+            # ------------------------------------------------------------------
+            # BILL CODE
+            # ------------------------------------------------------------------
+            with c1:
+
+                st.markdown(
+                    f"""
+                    <div class="ledger-cell {row_class}">
+                        <span class="ledger-bill">
+                            {row['Bill_No']}
+                        </span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
 
-                c1.write(
-                    f"**{row['Bill_No']}**"
+            # ------------------------------------------------------------------
+            # DATE
+            # ------------------------------------------------------------------
+            with c2:
+
+                st.markdown(
+                    f"""
+                    <div class="ledger-cell {row_class}"
+                         style="justify-content:center;">
+                        {row['Date']}
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
 
-                c2.write(
-                    row["Date"]
+            # ------------------------------------------------------------------
+            # OUTLET
+            # ------------------------------------------------------------------
+            with c3:
+
+                st.markdown(
+                    f"""
+                    <div class="ledger-cell {row_class}">
+                        <b>{row['Outlet_Name']}</b>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
 
-                c3.write(
-                    row["Outlet_Name"]
+            # ------------------------------------------------------------------
+            # MANAGER
+            # ------------------------------------------------------------------
+            with c4:
+
+                st.markdown(
+                    f"""
+                    <div class="ledger-cell {row_class}">
+                        {row['Manager_Name']}
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
 
-                c4.write(
-                    row["Manager_Name"]
+            # ------------------------------------------------------------------
+            # BILL AMOUNT
+            # ------------------------------------------------------------------
+            with c5:
+
+                st.markdown(
+                    f"""
+                    <div class="ledger-cell {row_class}"
+                         style="justify-content:right;">
+                        <span class="ledger-money">
+                            Rs {row['Bill_Amount']:,.2f}
+                        </span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
 
-                c5.write(
-                    f"Rs {row['Bill_Amount']:,.2f}"
+            # ------------------------------------------------------------------
+            # PAID AMOUNT
+            # ------------------------------------------------------------------
+            with c6:
+
+                st.markdown(
+                    f"""
+                    <div class="ledger-cell {row_class}"
+                         style="justify-content:right;">
+                        <span class="ledger-paid">
+                            Rs {row['Paid_Amount']:,.2f}
+                        </span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
 
-                c6.write(
-                    f"Rs {row['Paid_Amount']:,.2f}"
-                )
+            # ------------------------------------------------------------------
+            # BALANCE
+            # ------------------------------------------------------------------
+            with c7:
 
-                c7.write(
-                    f"Rs {row['Balance']:,.2f}"
-                )
+                if is_paid:
 
-                if row["Status"] == "🟢 PAID":
-
-                    c8.markdown(
-                        "**🟢 PAID**"
-                    )
-
-                elif row["Status"] == "🔴 PARTIAL":
-
-                    c8.markdown(
-                        "**🔴 PARTIAL**"
-                    )
+                    balance_html = f"""
+                        <span class="ledger-balance-zero">
+                            Rs {row['Balance']:,.2f}
+                        </span>
+                    """
 
                 else:
 
-                    c8.markdown(
-                        "**🔴 UNPAID**"
-                    )
+                    balance_html = f"""
+                        <span class="ledger-balance">
+                            Rs {row['Balance']:,.2f}
+                        </span>
+                    """
 
-                if not is_paid:
+                st.markdown(
+                    f"""
+                    <div class="ledger-cell {row_class}"
+                         style="justify-content:right;">
+                        {balance_html}
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
-                    c9.markdown(
-                        f"**⏰ {days_p} Days**"
-                    )
+            # ------------------------------------------------------------------
+            # STATUS
+            # ------------------------------------------------------------------
+            with c8:
+
+                st.markdown(
+                    f"""
+                    <div class="ledger-cell {row_class}"
+                         style="justify-content:center;">
+                        <span class="{status_class}">
+                            {status_text}
+                        </span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+            # ------------------------------------------------------------------
+            # DUES DAYS
+            # ------------------------------------------------------------------
+            with c9:
+
+                if is_paid:
+
+                    dues_html = """
+                        <span class="ledger-days-paid">
+                            0 Days
+                        </span>
+                    """
 
                 else:
 
-                    c9.write(
-                        "0 Days"
-                    )
+                    dues_html = f"""
+                        <span class="ledger-days">
+                            ⏰ {days_p} Days
+                        </span>
+                    """
 
-                # ------------------------------------------------------------------
-                # EDIT
-                # ------------------------------------------------------------------
-                if c10.button(
+                st.markdown(
+                    f"""
+                    <div class="ledger-cell {row_class}"
+                         style="justify-content:center;">
+                        {dues_html}
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+            # ------------------------------------------------------------------
+            # EDIT
+            # ------------------------------------------------------------------
+            with c10:
+
+                if st.button(
                     "✏️",
                     key=f"edit_b_{row['Bill_No']}",
                     help="Modify this bill",
@@ -1756,10 +2006,12 @@ with tab_bills:
 
                     st.rerun()
 
-                # ------------------------------------------------------------------
-                # DELETE
-                # ------------------------------------------------------------------
-                if c11.button(
+            # ------------------------------------------------------------------
+            # DELETE
+            # ------------------------------------------------------------------
+            with c11:
+
+                if st.button(
                     "🗑️",
                     key=f"del_b_{row['Bill_No']}",
                     help="Delete this bill",
@@ -1771,247 +2023,243 @@ with tab_bills:
 
                     st.rerun()
 
-                # ------------------------------------------------------------------
-                # EDIT FORM
-                # ------------------------------------------------------------------
-                if st.session_state.get(
-                    f"editing_bill_{row['Bill_No']}",
-                    False,
-                ):
+            # ------------------------------------------------------------------
+            # EDIT FORM
+            # ------------------------------------------------------------------
+            if st.session_state.get(
+                f"editing_bill_{row['Bill_No']}",
+                False,
+            ):
 
-                    st.markdown(
-                        f"""
-                        <div class="edit-card">
-                            <h4 style="color:#B7791F; margin:0;">
-                                ✏️ MODIFY BILL:
-                                {row['Bill_No']}
-                            </h4>
-                            <p style="margin:0;">
-                                Existing bill details ko yahan modify karein.
-                            </p>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
+                st.markdown(
+                    f"""
+                    <div class="edit-card">
+                        <h4 style="color:#B7791F; margin:0;">
+                            ✏️ MODIFY BILL: {row['Bill_No']}
+                        </h4>
 
-                    edit_col1, edit_col2 = st.columns(2)
+                        <p style="margin:0;">
+                            Existing bill details ko yahan modify karein.
+                        </p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
-                    with edit_col1:
+                edit_col1, edit_col2 = st.columns(2)
 
-                        edit_date = st.date_input(
-                            "Bill Date",
-                            datetime.strptime(
-                                row["Date"],
-                                "%d-%m-%Y",
-                            ),
-                            format="DD/MM/YYYY",
-                            key=f"edit_date_{row['Bill_No']}",
-                        )
+                with edit_col1:
 
-                        edit_manager = st.selectbox(
-                            "Sales Manager",
-                            managers_list,
-                            index=(
-                                managers_list.index(
-                                    row["Manager_Name"]
-                                )
-                                if row["Manager_Name"]
-                                in managers_list
-                                else 0
-                            ),
-                            key=f"edit_mgr_{row['Bill_No']}",
-                        )
-
-                    with edit_col2:
-
-                        edit_outlet = st.text_input(
-                            "Customer / Outlet Name",
-                            value=row[
-                                "Outlet_Name"
-                            ],
-                            key=f"edit_outlet_{row['Bill_No']}",
-                        )
-
-                        edit_amount = st.number_input(
-                            "Bill Amount (Rs)",
-                            min_value=float(
-                                row["Paid_Amount"]
-                            ),
-                            value=float(
-                                row["Bill_Amount"]
-                            ),
-                            step=50.0,
-                            key=f"edit_amount_{row['Bill_No']}",
-                        )
-
-                    edit_note = st.text_input(
-                        "Bill Details / Goods Note",
-                        value=(
-                            row["Note"]
-                            if row["Note"]
-                            else ""
+                    edit_date = st.date_input(
+                        "Bill Date",
+                        datetime.strptime(
+                            row["Date"],
+                            "%d-%m-%Y",
                         ),
-                        key=f"edit_note_{row['Bill_No']}",
+                        format="DD/MM/YYYY",
+                        key=f"edit_date_{row['Bill_No']}",
                     )
 
-                    save_col, cancel_col = st.columns(2)
+                    edit_manager = st.selectbox(
+                        "Sales Manager",
+                        managers_list,
+                        index=(
+                            managers_list.index(
+                                row["Manager_Name"]
+                            )
+                            if row["Manager_Name"]
+                            in managers_list
+                            else 0
+                        ),
+                        key=f"edit_mgr_{row['Bill_No']}",
+                    )
 
-                    with save_col:
+                with edit_col2:
 
-                        if st.button(
-                            "💾 Save Changes",
-                            key=f"save_edit_{row['Bill_No']}",
-                            use_container_width=True,
-                        ):
+                    edit_outlet = st.text_input(
+                        "Customer / Outlet Name",
+                        value=row["Outlet_Name"],
+                        key=f"edit_outlet_{row['Bill_No']}",
+                    )
 
-                            new_outlet = (
-                                edit_outlet
-                                .strip()
-                                .title()
+                    edit_amount = st.number_input(
+                        "Bill Amount (Rs)",
+                        min_value=float(
+                            row["Paid_Amount"]
+                        ),
+                        value=float(
+                            row["Bill_Amount"]
+                        ),
+                        step=50.0,
+                        key=f"edit_amount_{row['Bill_No']}",
+                    )
+
+                edit_note = st.text_input(
+                    "Bill Details / Goods Note",
+                    value=(
+                        row["Note"]
+                        if row["Note"]
+                        else ""
+                    ),
+                    key=f"edit_note_{row['Bill_No']}",
+                )
+
+                save_col, cancel_col = st.columns(2)
+
+                with save_col:
+
+                    if st.button(
+                        "💾 Save Changes",
+                        key=f"save_edit_{row['Bill_No']}",
+                        use_container_width=True,
+                    ):
+
+                        new_outlet = (
+                            edit_outlet
+                            .strip()
+                            .title()
+                        )
+
+                        if not new_outlet:
+
+                            st.error(
+                                "Outlet name cannot be empty."
                             )
 
-                            if not new_outlet:
+                        elif (
+                            edit_amount
+                            < float(
+                                row["Paid_Amount"]
+                            )
+                        ):
 
-                                st.error(
-                                    "Outlet name cannot be empty."
+                            st.error(
+                                f"Bill amount cannot be "
+                                f"less than paid amount "
+                                f"Rs "
+                                f"{row['Paid_Amount']:,.2f}."
+                            )
+
+                        else:
+
+                            success, message = (
+                                update_bill_in_db(
+                                    row["Bill_No"],
+                                    edit_date.strftime(
+                                        "%d-%m-%Y"
+                                    ),
+                                    edit_manager,
+                                    new_outlet,
+                                    float(edit_amount),
+                                    edit_note,
+                                )
+                            )
+
+                            if success:
+
+                                st.success(
+                                    f"✅ Bill "
+                                    f"{row['Bill_No']} "
+                                    f"modified successfully!"
                                 )
 
-                            elif (
-                                edit_amount
-                                < float(
-                                    row["Paid_Amount"]
-                                )
-                            ):
+                                st.session_state[
+                                    f"editing_bill_{row['Bill_No']}"
+                                ] = False
 
-                                st.error(
-                                    f"Bill amount cannot be "
-                                    f"less than paid amount "
-                                    f"Rs "
-                                    f"{row['Paid_Amount']:,.2f}."
-                                )
+                                st.rerun()
 
                             else:
 
-                                success, message = (
-                                    update_bill_in_db(
-                                        row["Bill_No"],
-                                        edit_date.strftime(
-                                            "%d-%m-%Y"
-                                        ),
-                                        edit_manager,
-                                        new_outlet,
-                                        float(
-                                            edit_amount
-                                        ),
-                                        edit_note,
-                                    )
-                                )
+                                st.error(message)
 
-                                if success:
+                with cancel_col:
 
-                                    st.success(
-                                        f"✅ Bill "
-                                        f"{row['Bill_No']} "
-                                        f"modified successfully!"
-                                    )
+                    if st.button(
+                        "❌ Cancel",
+                        key=f"cancel_edit_{row['Bill_No']}",
+                        use_container_width=True,
+                    ):
 
-                                    st.session_state[
-                                        f"editing_bill_{row['Bill_No']}"
-                                    ] = False
+                        st.session_state[
+                            f"editing_bill_{row['Bill_No']}"
+                        ] = False
 
-                                    st.rerun()
+                        st.rerun()
 
-                                else:
+            # ------------------------------------------------------------------
+            # DELETE CONFIRMATION
+            # ------------------------------------------------------------------
+            if st.session_state.get(
+                f"confirm_delete_bill_{row['Bill_No']}",
+                False,
+            ):
 
-                                    st.error(
-                                        message
-                                    )
+                st.markdown(
+                    f"""
+                    <div class="delete-card">
+                        <h4 style="color:#B91C1C; margin:0;">
+                            ⚠️ DELETE CONFIRMATION
+                        </h4>
 
-                    with cancel_col:
+                        <p style="margin:5px 0 0 0;">
+                            Are you sure you want to delete
+                            Bill <b>{row['Bill_No']}</b>
+                            for
+                            <b>{row['Outlet_Name']}</b>?
 
-                        if st.button(
-                            "❌ Cancel",
-                            key=f"cancel_edit_{row['Bill_No']}",
-                            use_container_width=True,
-                        ):
+                            <br>
 
-                            st.session_state[
-                                f"editing_bill_{row['Bill_No']}"
-                            ] = False
+                            Is bill ke saath associated
+                            payment history bhi delete ho jayegi.
+                        </p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
-                            st.rerun()
+                confirm_col1, confirm_col2 = st.columns(2)
 
-                # ------------------------------------------------------------------
-                # DELETE CONFIRMATION
-                # ------------------------------------------------------------------
-                if st.session_state.get(
-                    f"confirm_delete_bill_{row['Bill_No']}",
-                    False,
-                ):
+                with confirm_col1:
 
-                    st.markdown(
-                        f"""
-                        <div class="delete-card">
-                            <h4 style="color:#B91C1C; margin:0;">
-                                ⚠️ DELETE CONFIRMATION
-                            </h4>
-                            <p style="margin:5px 0 0 0;">
-                                Are you sure you want to delete
-                                Bill <b>{row['Bill_No']}</b>
-                                for
-                                <b>{row['Outlet_Name']}</b>?
-                                <br>
-                                Is bill ke saath associated
-                                payment history bhi delete ho jayegi.
-                            </p>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
+                    if st.button(
+                        "✅ Yes, Delete",
+                        key=f"confirm_yes_{row['Bill_No']}",
+                        use_container_width=True,
+                    ):
 
-                    confirm_col1, confirm_col2 = st.columns(2)
+                        delete_bill_from_db(
+                            row["Bill_No"]
+                        )
 
-                    with confirm_col1:
+                        st.session_state[
+                            f"confirm_delete_bill_{row['Bill_No']}"
+                        ] = False
 
-                        if st.button(
-                            "✅ Yes, Delete",
-                            key=f"confirm_yes_{row['Bill_No']}",
-                            use_container_width=True,
-                        ):
+                        st.success(
+                            f"Bill #{row['Bill_No']} "
+                            f"deleted successfully!"
+                        )
 
-                            delete_bill_from_db(
-                                row["Bill_No"]
-                            )
+                        st.rerun()
 
-                            st.session_state[
-                                f"confirm_delete_bill_{row['Bill_No']}"
-                            ] = False
+                with confirm_col2:
 
-                            st.success(
-                                f"Bill #{row['Bill_No']} "
-                                f"deleted successfully!"
-                            )
+                    if st.button(
+                        "❌ Cancel",
+                        key=f"confirm_no_{row['Bill_No']}",
+                        use_container_width=True,
+                    ):
 
-                            st.rerun()
+                        st.session_state[
+                            f"confirm_delete_bill_{row['Bill_No']}"
+                        ] = False
 
-                    with confirm_col2:
+                        st.rerun()
 
-                        if st.button(
-                            "❌ Cancel",
-                            key=f"confirm_no_{row['Bill_No']}",
-                            use_container_width=True,
-                        ):
-
-                            st.session_state[
-                                f"confirm_delete_bill_{row['Bill_No']}"
-                            ] = False
-
-                            st.rerun()
-
-        # ----------------------------------------------------------------------
+        # ======================================================================
         # PDF EXPORT
-        # HIGHEST DUES DAYS FIRST
-        # ----------------------------------------------------------------------
+        # ======================================================================
         st.markdown("---")
 
         pdf_df = df_view.copy()
@@ -2029,15 +2277,11 @@ with tab_bills:
                 axis=1,
             )
 
-            # --------------------------------------------------------------
-            # HIGHEST DUES DAYS FIRST
-            # --------------------------------------------------------------
             pdf_df = pdf_df.sort_values(
                 by="_Dues_Days",
                 ascending=False,
             )
 
-            # Temporary helper column remove
             pdf_df = pdf_df.drop(
                 columns=["_Dues_Days"]
             )
@@ -2063,9 +2307,9 @@ with tab_bills:
             mime="application/pdf",
         )
 
-        # ----------------------------------------------------------------------
-        # WHATSAPP OUTLET-WISE WRITTEN MESSAGE
-        # ----------------------------------------------------------------------
+        # ======================================================================
+        # WHATSAPP OUTLET-WISE
+        # ======================================================================
         st.markdown("---")
 
         st.markdown(
@@ -2076,9 +2320,6 @@ with tab_bills:
 
         with wa_outlet_col1:
 
-            # --------------------------------------------------------------
-            # OUTLET LIST
-            # --------------------------------------------------------------
             wa_outlet_options = sorted(
                 df_view["Outlet_Name"]
                 .dropna()
@@ -2113,17 +2354,11 @@ with tab_bills:
 
             else:
 
-                # ----------------------------------------------------------
-                # SELECTED OUTLET ALL BILLS
-                # ----------------------------------------------------------
                 outlet_df = df_view[
                     df_view["Outlet_Name"]
                     == selected_wa_outlet
                 ].copy()
 
-                # ----------------------------------------------------------
-                # CALCULATE DUES DAYS
-                # ----------------------------------------------------------
                 outlet_df["_Dues_Days"] = outlet_df.apply(
                     lambda r: (
                         0
@@ -2135,17 +2370,11 @@ with tab_bills:
                     axis=1,
                 )
 
-                # ----------------------------------------------------------
-                # HIGHEST DUES DAYS FIRST
-                # ----------------------------------------------------------
                 outlet_df = outlet_df.sort_values(
                     by="_Dues_Days",
                     ascending=False,
                 )
 
-                # ----------------------------------------------------------
-                # OUTLET TOTALS
-                # ----------------------------------------------------------
                 total_bill_amount = float(
                     outlet_df["Bill_Amount"].sum()
                 )
@@ -2158,9 +2387,6 @@ with tab_bills:
                     outlet_df["Balance"].sum()
                 )
 
-                # ----------------------------------------------------------
-                # MESSAGE HEADER
-                # ----------------------------------------------------------
                 msg = (
                     "*🥤 MS MAA VINDHYAWASINI TRADERS*\n"
                     "*OUTLET-WISE BILL STATEMENT / PAYMENT STATUS*\n"
@@ -2171,9 +2397,6 @@ with tab_bills:
                     "-----------------------------------\n"
                 )
 
-                # ----------------------------------------------------------
-                # ALL BILLS OF SELECTED OUTLET
-                # ----------------------------------------------------------
                 for _, wa_row in outlet_df.iterrows():
 
                     wa_is_paid = (
@@ -2216,9 +2439,6 @@ with tab_bills:
                         "-----------------------------\n"
                     )
 
-                # ----------------------------------------------------------
-                # OUTLET TOTAL SUMMARY
-                # ----------------------------------------------------------
                 msg += (
                     "\n*📊 OUTLET TOTAL SUMMARY*\n"
                     "-----------------------------------\n"
@@ -2231,9 +2451,6 @@ with tab_bills:
                     "-----------------------------------\n"
                 )
 
-                # ----------------------------------------------------------
-                # PAYMENT STATUS
-                # ----------------------------------------------------------
                 if total_balance <= 0:
 
                     msg += (
@@ -2248,18 +2465,12 @@ with tab_bills:
                         "Please clear the outstanding amount.\n"
                     )
 
-                # ----------------------------------------------------------
-                # FOOTER
-                # ----------------------------------------------------------
                 msg += (
                     "-----------------------------------\n"
                     "*MS MAA VINDHYAWASINI TRADERS*\n"
                     "Authorized Coca-Cola Distributor"
                 )
 
-                # ----------------------------------------------------------
-                # ENCODE WHATSAPP MESSAGE
-                # ----------------------------------------------------------
                 encoded_msg = urllib.parse.quote(
                     msg
                 )
@@ -2278,9 +2489,6 @@ with tab_bills:
                     f"&text={encoded_msg}"
                 )
 
-                # ----------------------------------------------------------
-                # WHATSAPP BUTTON
-                # ----------------------------------------------------------
                 st.markdown(
                     f"""
                     <a href="{wa_link}"
@@ -2303,13 +2511,13 @@ with tab_bills:
 
                 st.success(
                     "WhatsApp outlet-wise statement तैयार है। "
-                    "Button पर click करके भेज सकते हैं।"
+                    "Button पर click करके भेज सकते हैं."
                 )
 
 
-# ------------------------------------------------------------------------------
+# ==============================================================================
 # TAB 2 - PAYMENTS HISTORY
-# ------------------------------------------------------------------------------
+# ==============================================================================
 with tab_payments:
 
     st.markdown(
@@ -2438,12 +2646,15 @@ with tab_payments:
                             <h4 style="color:#B91C1C; margin:0;">
                                 ⚠️ PAYMENT DELETE CONFIRMATION
                             </h4>
+
                             <p style="margin:5px 0 0 0;">
                                 Delete payment of
                                 <b>Rs {p_row['Amount_Paid']:,.2f}</b>
                                 for Bill
                                 <b>{p_row['Bill_No']}</b>?
+
                                 <br>
+
                                 Bill ka paid amount aur balance
                                 automatically recalculate hoga.
                             </p>
@@ -2503,7 +2714,6 @@ with tab_payments:
 
         # ----------------------------------------------------------------------
         # WHATSAPP PAYMENT RECEIPT
-        # Written message only
         # ----------------------------------------------------------------------
         st.markdown("---")
 
