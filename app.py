@@ -1108,7 +1108,6 @@ st.markdown("---")
 st.subheader("📋 Business Ledger Records & Dashboard")
 
 if not bills_df.empty:
-    # Filter options
     col_f1, col_f2 = st.columns(2)
     
     with col_f1:
@@ -1134,20 +1133,16 @@ if not bills_df.empty:
         filtered_df = filtered_df[filtered_df["Outlet_Name"] == filter_outlet]
 
     if not filtered_df.empty:
-        # Prepare display dataframe with Dues Days as second last
         dash_df = filtered_df.copy()
         dash_df['Dues Days'] = dash_df['Date'].apply(calculate_days_pending)
         
-        # Reorder columns: put Dues Days right before Status
         cols = list(dash_df.columns)
-        # remove Dues Days from end
-        cols.remove('Dues Days')
-        # find status index and insert Dues Days before it
-        status_idx = cols.index('Status')
-        cols.insert(status_idx, 'Dues Days')
-        dash_df = dash_df[cols]
+        if 'Dues Days' in cols:
+            cols.remove('Dues Days')
+            status_idx = cols.index('Status')
+            cols.insert(status_idx, 'Dues Days')
+            dash_df = dash_df[cols]
 
-        # Display clean table with white background and grid lines
         st.dataframe(
             dash_df,
             use_container_width=True,
@@ -1159,7 +1154,6 @@ if not bills_df.empty:
             }
         )
 
-        # Show Total Net Dues (filtered wise or manager wise)
         total_net_dues = float(filtered_df["Balance"].sum())
         st.markdown(
             f"<h3 style='text-align: right; color: #DC2626;'>TOTAL NET DUES: ₹ {total_net_dues:,.2f}</h3>",
