@@ -13,7 +13,9 @@ st.set_page_config(
 )
 
 st.title("🥤 Coca-Cola Distribution - Credit & Ledger App")
-st.caption("500+ Outlets & Manager Wise Accounting Management")
+st.caption(
+    "500+ Outlets, Manager & Mode-Wise Ledger with Part Payment Support"
+)
 
 
 # ------------------------------------------------------------------------------
@@ -29,10 +31,10 @@ def generate_pdf(
     doc = SimpleDocTemplate(
         buffer,
         pagesize=letter,
-        rightMargin=20,
-        leftMargin=20,
-        topMargin=30,
-        bottomMargin=30,
+        rightMargin=15,
+        leftMargin=15,
+        topMargin=25,
+        bottomMargin=25,
     )
     elements = []
 
@@ -83,7 +85,7 @@ def generate_pdf(
             styles["Heading2"],
         )
     )
-    elements.append(Spacer(1, 12))
+    elements.append(Spacer(1, 10))
 
     # Table Setup
     headers = [
@@ -91,10 +93,11 @@ def generate_pdf(
         "Date",
         "Outlet Name",
         "Manager",
+        "Mode",
         "Debit (₹)",
         "Credit (₹)",
         "Balance (₹)",
-        "Dues (Days)",
+        "Dues Days",
     ]
     table_data = [[Paragraph(h, header_style) for h in headers]]
 
@@ -104,14 +107,15 @@ def generate_pdf(
             Paragraph(str(row["Date"]), cell_style),
             Paragraph(str(row["Outlet Name"]), cell_style),
             Paragraph(str(row["Manager"]), cell_style),
+            Paragraph(str(row["Payment Mode"]), cell_style),
             Paragraph(f"{row['Udhari (Debit)']:,.2f}", cell_style),
             Paragraph(f"{row['Payment (Credit)']:,.2f}", cell_style),
             Paragraph(f"{row['Balance']:,.2f}", cell_style),
             Paragraph(str(row["Dues Days"]), cell_style),
         ])
 
-    # Column Widths for Letter Page
-    col_widths = [30, 65, 120, 95, 68, 68, 68, 60]
+    # Dynamic Column Widths
+    col_widths = [25, 60, 115, 85, 55, 65, 65, 65, 47]
     pdf_table = Table(table_data, colWidths=col_widths, repeatRows=1)
     pdf_table.setStyle(
         TableStyle([
@@ -125,8 +129,8 @@ def generate_pdf(
                 (-1, -1),
                 [colors.whitesmoke, colors.white],
             ),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
         ])
     )
 
@@ -146,6 +150,7 @@ if "ledger" not in st.session_state:
             "Date",
             "Outlet Name",
             "Manager",
+            "Payment Mode",
             "Udhari (Debit)",
             "Payment (Credit)",
             "Balance",
@@ -154,7 +159,7 @@ if "ledger" not in st.session_state:
         ]
     )
 
-# Sidebar: CSV Import/Export Tools
+# Sidebar: CSV Import/Export
 with st.sidebar.expander("💾 Backup & Restore Data"):
     uploaded_file = st.file_uploader("Restore Ledger CSV", type=["csv"])
     if uploaded_file is not None:
@@ -174,9 +179,9 @@ with st.sidebar.expander("💾 Backup & Restore Data"):
         )
 
 # ------------------------------------------------------------------------------
-# 3. SIDEBAR FORM ENTRY
+# 3. SIDEBAR FORM ENTRY (NEW BILL / CREDIT ENTRY)
 # ------------------------------------------------------------------------------
-st.sidebar.header("➕ नई एंट्री दर्ज करें (New Entry)")
+st.sidebar.header("➕ नई बिल / उधारी एंट्री (New Entry)")
 
 with st.sidebar.form(key="entry_form", clear_on_submit=True):
     entry_date = st.date_input("Entry Date (तारीख)", datetime.now())
@@ -187,6 +192,10 @@ with st.sidebar.form(key="entry_form", clear_on_submit=True):
     )
     trans_type = st.radio(
         "Transaction Type", ["Udhari (Debit)", "Payment Received (Credit)"]
+    )
+    payment_mode = st.selectbox(
+        "Payment Mode (भुगतान का प्रकार)",
+        ["Cash", "Online (UPI/GPay/PhonePe)", "Bank Transfer (NEFT/RTGS)", "Cheque", "N/A (Udhari)"],
     )
     amount = st.number_input("Amount (₹)", min_value=0.0, step=100.0)
 
@@ -199,7 +208,6 @@ if submit_button:
         debit = amount if trans_type == "Udhari (Debit)" else 0.0
         credit = amount if trans_type == "Payment Received (Credit)" else 0.0
 
-        # Outlet Specific Data
         outlet_df = st.session_state.ledger[
             st.session_state.ledger["Outlet Name"] == outlet_name.strip()
         ]
@@ -208,7 +216,7 @@ if submit_button:
         )
         current_balance = prev_balance + debit - credit
 
-        # Calculate Dues Days logic
+        # Calculate Dues Days
         if current_balance <= 0:
             due_date_str = "-"
             dues_days = 0
@@ -239,6 +247,7 @@ if submit_button:
             "Date": entry_date.strftime("%d-%b-%Y"),
             "Outlet Name": outlet_name.strip(),
             "Manager": manager,
+            "Payment Mode": payment_mode if trans_type == "Payment Received (Credit)" else "N/A",
             "Udhari (Debit)": float(debit),
             "Payment (Credit)": float(credit),
             "Balance": float(current_balance),
@@ -254,11 +263,115 @@ if submit_button:
         st.rerun()
 
 # ------------------------------------------------------------------------------
-# 4. FILTERS & METRICS
+# 4. PART PAYMENT QUICK RECEIPT SECTION
 # ------------------------------------------------------------------------------
+st.markdown("### 💰 पार्ट पेमेंट प्राप्ति (Part Payment Collector)")
+st.info(
+    "यदि कोई आउटलेट थोड़ा-थोड़ा (Part Payment) करके पैसा जमा करता है, तो यहाँ से आसानी से दर्ज करें:"
+)
+
+existing_outlets = sorted(
+    list(st.session_state.ledger["Outlet Name"].unique())
+)
+
+if not existing_outlets:
+    st.warning("अभी कोई आउटलेट पंजीकृत नहीं है। Sidebar से पहली एंट्री दर्ज करें।")
+else:
+    p_col1, p_col2, p_col3, p_col4 = st.columns(4)
+
+    with p_col1:
+        part_outlet = st.selectbox(
+            "Outlet चुनें", existing_outlets, key="part_outlet_sel"
+        )
+    
+    # Calculate current due balance for selected outlet
+    part_df = st.session_state.ledger[
+        st.session_state.ledger["Outlet Name"] == part_outlet
+    ]
+    curr_due = part_df["Balance"].iloc[-1] if not part_df.empty else 0.0
+    outlet_mgr = part_df["Manager"].iloc[-1] if not part_df.empty else "PIYUSH YADAV"
+
+    with p_col2:
+        st.write(f"**वर्तमान बकाया:** ₹ {curr_due:,.2f}")
+        part_amount = st.number_input(
+            "जमा राशि (Part Amount ₹)",
+            min_value=0.0,
+            max_value=float(max(curr_due, 0.0)) if curr_due > 0 else 100000.0,
+            step=500.0,
+            key="part_amt_input",
+        )
+
+    with p_col3:
+        part_mode = st.selectbox(
+            "Payment Mode",
+            ["Cash", "Online (UPI/GPay/PhonePe)", "Bank Transfer (NEFT/RTGS)", "Cheque"],
+            key="part_mode_sel",
+        )
+        part_date = st.date_input(
+            "Payment Date", datetime.now(), key="part_dt_input"
+        )
+
+    with p_col4:
+        st.write("")
+        st.write("")
+        if st.button("💵 Part Payment जमा करें", use_container_width=True):
+            if part_amount <= 0:
+                st.error("कृपया 0 से अधिक राशि दर्ज करें!")
+            else:
+                new_bal = curr_due - part_amount
+                
+                if new_bal <= 0:
+                    due_dt_str = "-"
+                    d_days = 0
+                else:
+                    due_dt_str = (
+                        part_df["Due Date"].iloc[-1]
+                        if "Due Date" in part_df.columns
+                        else part_date.strftime("%Y-%m-%d")
+                    )
+                    if due_dt_str != "-":
+                        start_dt = datetime.strptime(
+                            due_dt_str, "%Y-%m-%d"
+                        ).date()
+                        d_days = (datetime.now().date() - start_dt).days
+                    else:
+                        d_days = 0
+
+                p_id = (
+                    st.session_state.ledger["ID"].max() + 1
+                    if not st.session_state.ledger.empty
+                    else 1
+                )
+
+                part_entry = {
+                    "ID": p_id,
+                    "Date": part_date.strftime("%d-%b-%Y"),
+                    "Outlet Name": part_outlet,
+                    "Manager": outlet_mgr,
+                    "Payment Mode": part_mode,
+                    "Udhari (Debit)": 0.0,
+                    "Payment (Credit)": float(part_amount),
+                    "Balance": float(new_bal),
+                    "Due Date": due_dt_str,
+                    "Dues Days": int(d_days),
+                }
+
+                st.session_state.ledger = pd.concat(
+                    [st.session_state.ledger, pd.DataFrame([part_entry])],
+                    ignore_index=True,
+                )
+                st.success(
+                    f"Part Payment ₹ {part_amount:,.2f} ({part_mode}) Safal Recorded for {part_outlet}!"
+                )
+                st.rerun()
+
+# ------------------------------------------------------------------------------
+# 5. FILTERS & METRICS
+# ------------------------------------------------------------------------------
+st.markdown("---")
 st.subheader("🔍 लेजर और उधारी फ़िल्टर (Filters)")
 
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 with col1:
     outlet_list = ["All Outlets"] + sorted(
         list(st.session_state.ledger["Outlet Name"].unique())
@@ -269,6 +382,11 @@ with col2:
         list(st.session_state.ledger["Manager"].unique())
     )
     filter_mgr = st.selectbox("Manager Wise", mgr_list)
+with col3:
+    mode_list = ["All Modes"] + sorted(
+        list(st.session_state.ledger["Payment Mode"].unique())
+    )
+    filter_mode = st.selectbox("Payment Mode Wise", mode_list)
 
 # Execute Filters
 df_display = st.session_state.ledger.copy()
@@ -276,6 +394,8 @@ if filter_outlet != "All Outlets":
     df_display = df_display[df_display["Outlet Name"] == filter_outlet]
 if filter_mgr != "All Managers":
     df_display = df_display[df_display["Manager"] == filter_mgr]
+if filter_mode != "All Modes":
+    df_display = df_display[df_display["Payment Mode"] == filter_mode]
 
 # Summary Dashboard
 total_debit = (
@@ -292,7 +412,7 @@ m2.metric("कुल जमा (Total Paid)", f"₹ {total_credit:,.2f}")
 m3.metric("🔴 कुल बकाया (Net Dues)", f"₹ {total_dues:,.2f}")
 
 # ------------------------------------------------------------------------------
-# 5. RECORDS & DELETION
+# 6. RECORDS TABLE & DELETION
 # ------------------------------------------------------------------------------
 st.markdown("---")
 st.subheader("📋 उधारी और पेमेंट रिकॉर्ड (Ledger Records)")
@@ -300,7 +420,7 @@ st.subheader("📋 उधारी और पेमेंट रिकॉर्�
 if df_display.empty:
     st.info("कोई रिकॉर्ड नहीं मिला।")
 else:
-    # High Performance Dataframe Display
+    # Interactive Dataframe Display
     st.dataframe(
         df_display[
             [
@@ -308,6 +428,7 @@ else:
                 "Date",
                 "Outlet Name",
                 "Manager",
+                "Payment Mode",
                 "Udhari (Debit)",
                 "Payment (Credit)",
                 "Balance",
@@ -317,6 +438,7 @@ else:
         use_container_width=True,
         column_config={
             "ID": st.column_config.NumberColumn("ID", format="%d"),
+            "Payment Mode": st.column_config.TextColumn("Mode"),
             "Udhari (Debit)": st.column_config.NumberColumn(
                 "Udhari (Debit)", format="₹ %.2f"
             ),
@@ -349,7 +471,7 @@ else:
                 st.error("Invalid Entry ID")
 
 # ------------------------------------------------------------------------------
-# 6. PDF EXPORT OPTIONS (OUTLET WISE & MANAGER WISE)
+# 7. PDF EXPORT OPTIONS
 # ------------------------------------------------------------------------------
 st.markdown("---")
 st.subheader("📄 PDF रिपोर्ट एक्सपोर्ट (Export PDF Reports)")
@@ -362,7 +484,7 @@ pdf_tab1, pdf_tab2, pdf_tab3 = st.tabs([
 
 # Tab 1: Outlet-wise PDF Report
 with pdf_tab1:
-    st.write("किसी विशिष्ट Outet की लेज़र रिपोर्ट PDF डाउनलोड करें:")
+    st.write("किसी विशिष्ट Outlet की पार्ट-पेमेंट लेज़र रिपोर्ट PDF डाउनलोड करें:")
     selected_outlet = st.selectbox(
         "Select Outlet for PDF",
         options=sorted(list(st.session_state.ledger["Outlet Name"].unique())),
@@ -383,7 +505,7 @@ with pdf_tab1:
             total_dues_amount=outlet_dues,
         )
         st.download_button(
-            label=f"📥 Download PDF Statement for {selected_outlet}",
+            label=f"📥 Download Statement for {selected_outlet}",
             data=pdf_outlet_file,
             file_name=f"Statement_Outlet_{selected_outlet.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf",
             mime="application/pdf",
@@ -428,9 +550,7 @@ with pdf_tab2:
 
 # Tab 3: Current Filtered View PDF Report
 with pdf_tab3:
-    st.write(
-        "वर्तमान में ऊपर चुने गए फ़िल्टर (Filtered View) की PDF डाउनलोड करें:"
-    )
+    st.write("वर्तमान फ़िल्टर (Filtered View) की PDF डाउनलोड करें:")
     if not df_display.empty:
         pdf_current_file = generate_pdf(
             df_display,
@@ -448,7 +568,7 @@ with pdf_tab3:
         st.info("डाउनलोड करने के लिए डेटा उपलब्ध नहीं है।")
 
 # ------------------------------------------------------------------------------
-# 7. WHATSAPP SHARING SECTION
+# 8. WHATSAPP SHARING SECTION
 # ------------------------------------------------------------------------------
 st.markdown("---")
 st.subheader("💬 WhatsApp शेयरिंग")
