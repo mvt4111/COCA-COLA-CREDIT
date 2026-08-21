@@ -1,4 +1,5 @@
 import io
+import sqlite3
 from datetime import datetime
 import urllib.parse
 import pandas as pd
@@ -43,69 +44,129 @@ st.title("🥤 MS MAA VINDHYAWASINI TRADERS (COCA COLA)")
 st.caption("Manage sales managers, outlets/customers, debit/credit entries, due days, and export reports")
 
 # ------------------------------------------------------------------------------
-# 1. STATE MANAGEMENT & HELPER FUNCTIONS
+# 1. DATABASE MANAGEMENT (DATABASE SE DATA AUTOMATIC RESTORE HOGA)
 # ------------------------------------------------------------------------------
-if "ledger" not in st.session_state:
-    st.session_state.ledger = pd.DataFrame(
-        columns=[
-            "ID",
-            "Date",
-            "Manager Name",
-            "Outlet Name",
-            "Type",
-            "Debit (You Gave)",
-            "Credit (You Got)",
-            "Balance",
-            "Note",
-        ]
-    )
+DB_FILE = "khatabook.db"
 
-if "outlets_list" not in st.session_state:
-    st.session_state.outlets_list = []
+def init_db():
+    """Database tables create karta hai agar exist na karein."""
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS ledger (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            Date TEXT,
+            Manager_Name TEXT,
+            Outlet_Name TEXT,
+            Type TEXT,
+            Debit REAL,
+            Credit REAL,
+            Balance REAL,
+            Note TEXT
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS managers (
+            name TEXT PRIMARY KEY
+        )
+    """)
+    # Default Manager insert karein agar koi na ho
+    c.execute("INSERT OR IGNORE INTO managers (name) VALUES ('Default Manager')")
+    conn.commit()
+    conn.close()
 
-if "managers_list" not in st.session_state:
-    st.session_state.managers_list = ["Default Manager"]
-
-if "outlet_manager_map" not in st.session_state:
-    st.session_state.outlet_manager_map = {}
-
-
-def recalculate_balances():
-    """Recalculates running balance outlet-wise whenever an entry is deleted."""
-    if st.session_state.ledger.empty:
-        return
+def load_data_from_db():
+    """Database se saara ledger aur manager list load karta hai."""
+    conn = sqlite3.connect(DB_FILE)
     
-    # Sort by ID to maintain correct sequence
-    st.session_state.ledger = st.session_state.ledger.sort_values(by="ID").reset_index(drop=True)
+    # Ledger Table
+    df = pd.read_sql_query("SELECT ID, Date, Manager_Name as 'Manager Name', Outlet_Name as 'Outlet Name', Type, Debit as 'Debit (You Gave)', Credit as 'Credit (You Got)', Balance, Note FROM ledger", conn)
     
-    for outlet in st.session_state.ledger["Outlet Name"].unique():
-        outlet_mask = st.session_state.ledger["Outlet Name"] == outlet
-        running_bal = 0.0
-        
-        for idx in st.session_state.ledger[outlet_mask].index:
-            debit = float(st.session_state.ledger.at[idx, "Debit (You Gave)"])
-            credit = float(st.session_state.ledger.at[idx, "Credit (You Got)"])
-            running_bal += (debit - credit)
-            st.session_state.ledger.at[idx, "Balance"] = running_bal
+    # Managers Table
+    mgr_df = pd.read_sql_query("SELECT name FROM managers", conn)
+    managers_list = mgr_df["name"].tolist() if not mgr_df.empty else ["Default Manager"]
+    
+    # Outlets List
+    outlets_list = sorted(list(df["Outlet Name"].dropna().unique())) if not df.empty else []
+    
+    # Outlet Manager Map
+    outlet_mgr_map = {}
+    if not df.empty:
+        for idx, row in df.iterrows():
+            outlet_mgr_map[row["Outlet Name"]] = row["Manager Name"]
+
+    conn.close()
+    return df, managers_list, outlets_list, outlet_mgr_map
+
+# DB Initialize karein
+init_db()
+
+# Load Data into Session State
+df_db, mgrs, outlets, mgr_map = load_data_from_db()
+st.session_state.ledger = df_db
+st.session_state.managers_list = mgrs
+st.session_state.outlets_list = outlets
+st.session_state.outlet_manager_map = mgr_map
 
 
-def save_manager_name(mgr_str: str) -> str:
+def save_entry_to_db(entry):
+    """Nayi entry ko database me permanently save karta hai."""
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("""
+        INSERT INTO ledger (Date, Manager_Name, Outlet_Name, Type, Debit, Credit, Balance, Note)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        entry["Date"],
+        entry["Manager Name"],
+        entry["Outlet Name"],
+        entry["Type"],
+        entry["Debit (You Gave)"],
+        entry["Credit (You Got)"],
+        entry["Balance"],
+        entry["Note"]
+    ))
+    conn.commit()
+    conn.close()
+
+def delete_entry_from_db(entry_id):
+    """Entry ko ID ke hisab se delete karta hai."""
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("DELETE FROM ledger WHERE ID = ?", (entry_id,))
+    conn.commit()
+    conn.close()
+    recalculate_balances_in_db()
+
+def save_manager_to_db(mgr_str):
+    """Naya manager DB me save karta hai."""
     clean_mgr = mgr_str.strip().title()
-    if clean_mgr and clean_mgr not in st.session_state.managers_list:
-        st.session_state.managers_list.append(clean_mgr)
-        st.session_state.managers_list.sort()
-    return clean_mgr
+    if clean_mgr:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("INSERT OR IGNORE INTO managers (name) VALUES (?)", (clean_mgr,))
+        conn.commit()
+        conn.close()
 
-
-def save_outlet_name(outlet_str: str, manager_str: str) -> str:
-    clean_outlet = outlet_str.strip().title()
-    if clean_outlet:
-        if clean_outlet not in st.session_state.outlets_list:
-            st.session_state.outlets_list.append(clean_outlet)
-            st.session_state.outlets_list.sort()
-        st.session_state.outlet_manager_map[clean_outlet] = manager_str
-    return clean_outlet
-
+def recalculate_balances_in_db():
+    """Delete ke baad sabhi entries ka balance fir se update karta hai."""
+    conn = sqlite3.connect(DB_FILE)
+    df = pd.read_sql_query("SELECT * FROM ledger ORDER BY ID ASC", conn)
+    
+    if not df.empty:
+        c = conn.cursor()
+        for outlet in df["Outlet_Name"].unique():
+            outlet_mask = df["Outlet_Name"] == outlet
+            running_bal = 0.0
+            
+            for idx in df[outlet_mask].index:
+                debit = float(df.at[idx, "Debit"])
+                credit = float(df.at[idx, "Credit"])
+                running_bal += (debit - credit)
+                row_id = int(df.at[idx, "ID"])
+                c.execute("UPDATE ledger SET Balance = ? WHERE ID = ?", (running_bal, row_id))
+        conn.commit()
+    conn.close()
 
 def generate_pdf_report(df_data, report_title="Khatabook Statement", subtitle_info=""):
     buffer = io.BytesIO()
@@ -246,8 +307,7 @@ def generate_pdf_report(df_data, report_title="Khatabook Statement", subtitle_in
     buffer.seek(0)
     return buffer.getvalue()
 
-
-# Sidebar: Data Backup & Setup
+# Sidebar: Backup & Manager Setup
 with st.sidebar:
     st.header("⚙️ Master Settings")
 
@@ -255,7 +315,7 @@ with st.sidebar:
         new_mgr = st.text_input("Add New Sales Manager")
         if st.button("Save Manager"):
             if new_mgr.strip():
-                save_manager_name(new_mgr)
+                save_manager_to_db(new_mgr)
                 st.success(f"Added Manager: {new_mgr}")
                 st.rerun()
 
@@ -263,36 +323,18 @@ with st.sidebar:
         st.write("**Current Managers:**")
         st.write(", ".join(st.session_state.managers_list))
 
-    with st.expander("💾 Data Backup & Restore"):
-        uploaded_file = st.file_uploader("Upload Backup CSV", type=["csv"])
-        if uploaded_file is not None:
-            try:
-                uploaded_df = pd.read_csv(uploaded_file)
-                if "Manager Name" not in uploaded_df.columns:
-                    uploaded_df["Manager Name"] = "Default Manager"
-                st.session_state.ledger = uploaded_df
-                st.session_state.outlets_list = sorted(
-                    list(st.session_state.ledger["Outlet Name"].dropna().unique())
-                )
-                st.session_state.managers_list = sorted(
-                    list(st.session_state.ledger["Manager Name"].dropna().unique())
-                )
-                recalculate_balances()
-                st.success("Ledger data restored successfully!")
-            except Exception as e:
-                st.error(f"Error loading file: {e}")
-
+    with st.expander("💾 Backup CSV"):
         if not st.session_state.ledger.empty:
             csv_buf = st.session_state.ledger.to_csv(index=False).encode("utf-8")
             st.download_button(
-                label="📥 Download Full Backup (CSV)",
+                label="📥 Download CSV Backup",
                 data=csv_buf,
                 file_name=f"maa_vindhyawasini_khatabook_{datetime.now().strftime('%d-%m-%Y')}.csv",
                 mime="text/csv",
             )
 
 # ------------------------------------------------------------------------------
-# 2. ENTRY SECTION (YOU GAVE & YOU GOT)
+# 2. ENTRY SECTION
 # ------------------------------------------------------------------------------
 st.markdown("---")
 col_left, col_right = st.columns(2)
@@ -332,17 +374,14 @@ with col_left:
         elif u_amount <= 0:
             st.error("Please enter a valid amount greater than zero!")
         else:
-            final_outlet = save_outlet_name(u_outlet, u_manager)
+            final_outlet = u_outlet.strip().title()
             formatted_date = u_date.strftime("%d-%m-%Y")
 
             outlet_df = st.session_state.ledger[st.session_state.ledger["Outlet Name"] == final_outlet]
             prev_balance = outlet_df["Balance"].iloc[-1] if not outlet_df.empty else 0.0
             new_balance = prev_balance + u_amount
 
-            new_id = int(st.session_state.ledger["ID"].max()) + 1 if not st.session_state.ledger.empty else 1
-
             entry = {
-                "ID": new_id,
                 "Date": formatted_date,
                 "Manager Name": u_manager,
                 "Outlet Name": final_outlet,
@@ -353,7 +392,7 @@ with col_left:
                 "Note": u_note if u_note else "Credit Bill",
             }
 
-            st.session_state.ledger = pd.concat([st.session_state.ledger, pd.DataFrame([entry])], ignore_index=True)
+            save_entry_to_db(entry)
             st.success(f"🔴 Added Rs {u_amount:,.2f} credit entry for {final_outlet}")
             st.rerun()
 
@@ -401,10 +440,7 @@ with col_right:
                 formatted_date = p_date.strftime("%d-%m-%Y")
                 new_balance = current_due - p_amount
 
-                new_id = int(st.session_state.ledger["ID"].max()) + 1 if not st.session_state.ledger.empty else 1
-
                 entry = {
-                    "ID": new_id,
                     "Date": formatted_date,
                     "Manager Name": p_manager,
                     "Outlet Name": p_outlet,
@@ -415,12 +451,12 @@ with col_right:
                     "Note": f"Payment ({p_mode})",
                 }
 
-                st.session_state.ledger = pd.concat([st.session_state.ledger, pd.DataFrame([entry])], ignore_index=True)
+                save_entry_to_db(entry)
                 st.success(f"🟢 Received Rs {p_amount:,.2f} payment from {p_outlet}")
                 st.rerun()
 
 # ------------------------------------------------------------------------------
-# 3. DASHBOARD WITH DUES DAYS & DELETE OPTION
+# 3. DASHBOARD & DELETE OPTION
 # ------------------------------------------------------------------------------
 st.markdown("---")
 st.subheader("📊 Ledger Dashboard & Dues Days Summary")
@@ -449,7 +485,6 @@ else:
     if selected_outlet_filter != "All Outlets":
         df_view = df_view[df_view["Outlet Name"] == selected_outlet_filter]
 
-    # Metrics Summary
     tot_given = df_view["Debit (You Gave)"].sum()
     tot_got = df_view["Credit (You Got)"].sum()
     tot_due = tot_given - tot_got
@@ -459,9 +494,7 @@ else:
     m2.metric("Total You Got", f"Rs {tot_got:,.2f}")
     m3.metric("🔴 Net Outstanding Due", f"Rs {tot_due:,.2f}")
 
-    # --------------------------------------------------------------------------
-    # OUTLET DUES DAYS SUMMARY TABLE
-    # --------------------------------------------------------------------------
+    # Outlets Dues Summary
     st.markdown("#### ⏳ Outlet Wise Dues & Pending Days")
     dues_data = []
     
@@ -469,7 +502,7 @@ else:
         o_df = st.session_state.ledger[st.session_state.ledger["Outlet Name"] == outlet_name]
         if not o_df.empty:
             bal = o_df["Balance"].iloc[-1]
-            if bal > 0: # Only show outlets with active dues
+            if bal > 0:
                 last_debit_entry = o_df[o_df["Debit (You Gave)"] > 0]
                 if not last_debit_entry.empty:
                     last_date_str = last_debit_entry["Date"].iloc[-1]
@@ -492,12 +525,9 @@ else:
     else:
         st.success("🎉 No active outstanding dues for any outlet!")
 
-    # --------------------------------------------------------------------------
-    # DETAILED LEDGER TABLE WITH DELETE BUTTON
-    # --------------------------------------------------------------------------
-    st.markdown("#### 📋 Detailed Transactions (Delete Entry Available)")
+    # Detailed Table With Delete Button
+    st.markdown("#### 📋 Detailed Transactions")
     
-    # Custom headers
     h_col1, h_col2, h_col3, h_col4, h_col5, h_col6, h_col7, h_col8, h_col9 = st.columns([1, 1.2, 1.5, 1.5, 2, 1.5, 1.5, 1.5, 1])
     h_col1.write("**ID**")
     h_col2.write("**Date**")
@@ -522,16 +552,12 @@ else:
         c7.write(f"Rs {row['Credit (You Got)']:,.2f}")
         c8.write(f"Rs {row['Balance']:,.2f}")
         
-        # Delete Button for each entry
         if c9.button("🗑️", key=f"del_{row['ID']}"):
-            st.session_state.ledger = st.session_state.ledger[st.session_state.ledger["ID"] != row["ID"]].reset_index(drop=True)
-            recalculate_balances()
-            st.success(f"Entry #{row['ID']} deleted successfully!")
+            delete_entry_from_db(row["ID"])
+            st.success(f"Entry #{row['ID']} deleted!")
             st.rerun()
 
-    # --------------------------------------------------------------------------
-    # EXPORT OPTIONS
-    # --------------------------------------------------------------------------
+    # Export Section
     st.markdown("---")
     st.markdown("### 📄 Export & WhatsApp Sharing Options")
     exp_col1, exp_col2 = st.columns(2)
