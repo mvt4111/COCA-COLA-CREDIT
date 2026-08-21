@@ -620,7 +620,8 @@ def calculate_days_pending(bill_date_str):
 
 
 # ------------------------------------------------------------------------------
-# PDF REPORT GENERATOR - UPDATED
+# PDF REPORT GENERATOR
+# DUES DAYS ADDED AS SECOND LAST COLUMN
 # ------------------------------------------------------------------------------
 def generate_pdf_report(
     df_data,
@@ -642,7 +643,7 @@ def generate_pdf_report(
     styles = getSampleStyleSheet()
 
     # --------------------------------------------------------------------------
-    # MAIN TITLE
+    # TITLE STYLE
     # --------------------------------------------------------------------------
     title_style = ParagraphStyle(
         "DocTitle",
@@ -668,7 +669,7 @@ def generate_pdf_report(
     )
 
     # --------------------------------------------------------------------------
-    # OUTLET NAME - BIG & BOLD
+    # OUTLET TITLE
     # --------------------------------------------------------------------------
     outlet_style = ParagraphStyle(
         "OutletTitle",
@@ -698,20 +699,21 @@ def generate_pdf_report(
     table_hdr_style = ParagraphStyle(
         "TableHdr",
         parent=styles["Normal"],
-        fontSize=8,
-        leading=10,
+        fontSize=7.2,
+        leading=9,
         textColor=colors.white,
         fontName="Helvetica-Bold",
+        alignment=1,
     )
 
     # --------------------------------------------------------------------------
-    # NORMAL TABLE CELL
+    # TABLE CELL
     # --------------------------------------------------------------------------
     table_cell_style = ParagraphStyle(
         "TableCell",
         parent=styles["Normal"],
-        fontSize=8,
-        leading=10,
+        fontSize=7.2,
+        leading=9,
         textColor=colors.HexColor("#334155"),
     )
 
@@ -723,8 +725,8 @@ def generate_pdf_report(
         parent=table_cell_style,
         textColor=colors.HexColor("#DC2626"),
         fontName="Helvetica-Bold",
-        fontSize=8,
-        leading=10,
+        fontSize=7.2,
+        leading=9,
     )
 
     # --------------------------------------------------------------------------
@@ -735,8 +737,8 @@ def generate_pdf_report(
         parent=table_cell_style,
         textColor=colors.HexColor("#16A34A"),
         fontName="Helvetica-Bold",
-        fontSize=8,
-        leading=10,
+        fontSize=7.2,
+        leading=9,
     )
 
     # --------------------------------------------------------------------------
@@ -760,7 +762,7 @@ def generate_pdf_report(
     )
 
     # --------------------------------------------------------------------------
-    # TOTAL DUES STYLE
+    # TOTAL DUES
     # --------------------------------------------------------------------------
     total_dues_style = ParagraphStyle(
         "TotalDues",
@@ -842,8 +844,8 @@ def generate_pdf_report(
     )
 
     # --------------------------------------------------------------------------
-    # PDF TABLE
-    # DUES DAYS REMOVED
+    # PDF TABLE HEADERS
+    # DUES DAYS = SECOND LAST
     # --------------------------------------------------------------------------
     headers = [
         "Bill Code",
@@ -853,6 +855,7 @@ def generate_pdf_report(
         "Paid Amt (Rs)",
         "Balance (Rs)",
         "Status",
+        "Dues Days",
     ]
 
     table_data = [
@@ -884,11 +887,33 @@ def generate_pdf_report(
             status_style,
         )
 
-        # Balance color
+        # ----------------------------------------------------------------------
+        # DUES DAYS
+        # PAID = 0
+        # UNPAID / PARTIAL = ACTUAL DAYS
+        # ----------------------------------------------------------------------
+        if float(row["Balance"]) > 0:
+            dues_days = calculate_days_pending(
+                str(row["Date"])
+            )
+        else:
+            dues_days = 0
+
+        # ----------------------------------------------------------------------
+        # BALANCE COLOR
+        # ----------------------------------------------------------------------
         if float(row["Balance"]) > 0:
             balance_style = red_balance_style
         else:
             balance_style = green_status_style
+
+        # ----------------------------------------------------------------------
+        # DUES DAYS COLOR
+        # ----------------------------------------------------------------------
+        if dues_days > 0:
+            dues_days_style = red_status_style
+        else:
+            dues_days_style = green_status_style
 
         table_data.append(
             [
@@ -923,6 +948,11 @@ def generate_pdf_report(
                 ),
 
                 status_text,
+
+                Paragraph(
+                    f"{dues_days} Days",
+                    dues_days_style,
+                ),
             ]
         )
 
@@ -932,13 +962,14 @@ def generate_pdf_report(
     t = Table(
         table_data,
         colWidths=[
-            70,
-            65,
-            125,
-            70,
-            70,
-            75,
-            70,
+            65,   # Bill Code
+            55,   # Date
+            105,  # Outlet
+            65,   # Bill Amount
+            65,   # Paid Amount
+            65,   # Balance
+            65,   # Status
+            55,   # Dues Days
         ],
         repeatRows=1,
     )
@@ -965,6 +996,13 @@ def generate_pdf_report(
                     (0, 1),
                     (-1, -1),
                     "LEFT",
+                ),
+
+                (
+                    "ALIGN",
+                    (-1, 1),
+                    (-1, -1),
+                    "CENTER",
                 ),
 
                 (
@@ -996,7 +1034,7 @@ def generate_pdf_report(
                     "PADDING",
                     (0, 0),
                     (-1, -1),
-                    5,
+                    4,
                 ),
             ]
         )
@@ -1526,7 +1564,7 @@ with tab_bills:
             ]
 
         # ----------------------------------------------------------------------
-        # ONLY TOTAL NET DUES
+        # TOTAL NET DUES
         # ----------------------------------------------------------------------
         tot_due = df_view["Balance"].sum()
 
@@ -1954,9 +1992,13 @@ with tab_bills:
                             st.rerun()
 
         # ----------------------------------------------------------------------
-        # PDF EXPORT
+        # PDF EXPORT + WHATSAPP
         # ----------------------------------------------------------------------
         st.markdown("---")
+
+        st.markdown(
+            "### 📄 PDF Statement Export"
+        )
 
         rep_sub = (
             f"Outlet: {selected_outlet_filter} | "
@@ -1968,16 +2010,101 @@ with tab_bills:
             subtitle_info=rep_sub,
         )
 
-        st.download_button(
-            label="📄 Download Bills PDF Statement",
-            data=pdf_bytes,
-            file_name=(
-                f"Bill_Statement_"
-                f"{selected_outlet_filter}_"
-                f"{datetime.now().strftime('%d%m%Y')}.pdf"
-            ),
-            mime="application/pdf",
+        pdf_file_name = (
+            f"Bill_Statement_"
+            f"{selected_outlet_filter}_"
+            f"{datetime.now().strftime('%d%m%Y')}.pdf"
         )
+
+        # ----------------------------------------------------------------------
+        # PDF DOWNLOAD
+        # ----------------------------------------------------------------------
+        pdf_download_col, whatsapp_col = st.columns(2)
+
+        with pdf_download_col:
+
+            st.download_button(
+                label="📄 Download Bills PDF Statement",
+                data=pdf_bytes,
+                file_name=pdf_file_name,
+                mime="application/pdf",
+                use_container_width=True,
+            )
+
+        # ----------------------------------------------------------------------
+        # WHATSAPP PDF SHARE
+        # ----------------------------------------------------------------------
+        with whatsapp_col:
+
+            whatsapp_phone = st.text_input(
+                "📱 Customer WhatsApp Number",
+                placeholder="91XXXXXXXXXX",
+                key="pdf_whatsapp_phone",
+            )
+
+            whatsapp_message = (
+                "🥤 MS MAA VINDHYAWASINI TRADERS\n\n"
+                "*BILL STATEMENT PDF*\n"
+                f"🏪 Outlet: {selected_outlet_filter}\n"
+                f"👤 Manager: {selected_mgr_filter}\n"
+                f"💰 Total Net Dues: "
+                f"Rs {df_view['Balance'].sum():,.2f}\n\n"
+                "Please find the Bill Statement PDF attached.\n"
+                "Thank you!"
+            )
+
+            encoded_wa_message = urllib.parse.quote(
+                whatsapp_message
+            )
+
+            if whatsapp_phone.strip():
+
+                clean_phone = (
+                    whatsapp_phone
+                    .strip()
+                    .replace("+", "")
+                    .replace(" ", "")
+                    .replace("-", "")
+                )
+
+                wa_url = (
+                    "https://wa.me/"
+                    f"{clean_phone}"
+                    f"?text={encoded_wa_message}"
+                )
+
+                st.markdown(
+                    f"""
+                    <a href="{wa_url}"
+                       target="_blank"
+                       style="
+                       display:block;
+                       text-align:center;
+                       background-color:#25D366;
+                       color:white;
+                       padding:11px;
+                       border-radius:7px;
+                       text-decoration:none;
+                       font-weight:bold;
+                       margin-top:8px;
+                       ">
+                       📲 Open WhatsApp & Send PDF
+                    </a>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                st.caption(
+                    "WhatsApp खुलने के बाद downloaded PDF को "
+                    "📎 Document के रूप में attach करके भेजें।"
+                )
+
+            else:
+
+                st.info(
+                    "पहले WhatsApp number डालें, "
+                    "फिर WhatsApp button दबाएँ।"
+                )
 
 
 # ------------------------------------------------------------------------------
